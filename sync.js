@@ -7,7 +7,7 @@
 var REMOTE = null;
 var SNAP = {};
 var SYNC = {timer:null, busy:false, again:false, pending:false, state:''};
-var SUPABASE_JS = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js';
+var SUPABASE_JS = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.116.0/dist/umd/supabase.js';
 
 function canon(v){
   if (v === null || v === undefined || typeof v !== 'object') return JSON.stringify(v === undefined ? null : v);
