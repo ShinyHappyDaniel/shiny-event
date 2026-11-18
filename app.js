@@ -22,12 +22,19 @@ var MODS = {
   avtal:{name:'Avtal', one:'avtal', fields:[['motpart','Motpart','text'],['typ','Typ','select',['Kund','Lokal','Leverantör','Artist','Personal']],['status','Status','status',['Utkast','Skickat','Signerat','Utgånget']],['start','Start','date'],['slut','Slut','date'],['uppsagning','Villkor','text'],['pdf','Fil','text']], cols:['motpart','typ','status','slut','pdf']},
   gaster:{name:'Gäster'}
 };
+var EVENT_FIELDS = [['client','Kund','text'],['date','Datum','date'],['venue','Lokal','text'],['address','Adress','text'],['guests','Antal platser','number'],['offer','Offererat till kund','money'],['osa.ja','Tackat ja','number'],['osa.nej','Tackat nej','number'],['osaUrl','OSA-sidans adress','text'],['kost','Specialkost, en per rad (Namn: antal)','kv'],['risks','Att hålla koll på, en per rad','lines']];
+var NY = {uppgifter:'Ny uppgift', schema:'Ny schemapunkt', korschema:'Ny punkt', personal:'Ny roll', leverantorer:'Ny leverantör', underhallning:'Ny akt', teknik:'Ny artikel', fortaring:'Ny servering', budget:'Ny post', avtal:'Nytt avtal', ritningar:'Ny ritning', moodboard:'Nytt kort'};
+var TEMPLATES0 = JSON.stringify(TEMPLATES);
+function val(it, k){ return k.indexOf('.') < 0 ? it[k] : k.split('.').reduce(function(o, p){ return o ? o[p] : undefined; }, it); }
+function setVal(it, k, v){ if (k.indexOf('.') < 0){ it[k] = v; return; } var p = k.split('.'), o = it; for (var i = 0; i < p.length - 1; i++) o = o[p[i]] = o[p[i]] || {}; o[p[p.length - 1]] = v; }
+function tplName(ev){ return (TEMPLATES[ev.tpl] || {name:'Borttagen mall'}).name; }
+function addBtn(mod){ return kund() ? '' : '<button class="btn pri" data-act="addfirst" data-mod="' + mod + '">Lägg till ' + MODS[mod].one + '</button>'; }
 var PERSON_FIELDS = [['role','Roll','text'],['tel','Telefon','text'],['mejl','Mejl','text'],['ort','Ort','text'],['cert','Certifikat','text'],['arvode','Arvode per pass','money'],['avtal','Avtal, fil','text'],['avtalslut','Avtal löper ut','date']];
 var GROUPS = [['', ['oversikt']], ['Planering', ['uppgifter','schema','korschema']], ['Folk', ['personal','leverantorer','underhallning']], ['Plats', ['lokal','ritningar','teknik','fortaring']], ['Kreativt', ['moodboard']], ['Affär', ['budget','avtal','gaster']]];
 var KUND_MODS = ['oversikt','uppgifter','korschema','ritningar','moodboard','gaster'];
 
-var S, UI = {taskView:'lista', taskFilter:'alla', hideDone:false, shut:{}, who:'Alla', drawing:null, pinMode:false, vis:'intern', draft:'', live:null, pal:null, undo:null, week:0, tw:'Daniel'};
-function load(){ try { S = JSON.parse(localStorage.getItem(KEY)); } catch(e){} if (!S || S.v !== 1) S = seed(); if (!S.time) S.time = seedTime(); }
+var S, UI = {taskView:'lista', taskFilter:'alla', hideDone:false, shut:{}, who:'Alla', drawing:null, pinMode:false, vis:'intern', draft:'', live:null, pal:null, undo:null, week:0, tw:'Daniel', tplOpen:{}, focusNew:false};
+function load(){ try { S = JSON.parse(localStorage.getItem(KEY)); } catch(e){} if (!S || S.v !== 1) S = seed(); if (!S.time) S.time = seedTime(); if (!S.templates) S.templates = JSON.parse(TEMPLATES0); TEMPLATES = S.templates; }
 function save(){ try { localStorage.setItem(KEY, JSON.stringify(S)); } catch(e){} }
 function $(s){ return document.querySelector(s); }
 function kund(){ return S.role === 'kund'; }
@@ -44,6 +51,7 @@ function route(){
 function href(ev, mod, id){ return '#/e/' + ev.id + '/' + mod + (id ? '/' + id : ''); }
 function findItem(ev, id){
   if (id === 'lokal') return {it:ev.lokal, mod:'lokal'};
+  if (id === 'event' || id === ev.id) return {it:ev, mod:'_event'};
   for (var m in ev.items){ var x = ev.items[m].filter(function(i){ return i.id === id; })[0]; if (x) return {it:x, mod:m}; }
   return null;
 }
@@ -53,7 +61,7 @@ function ctx(){
   if (r.view === 'personal' && r.item) return {it:person(r.item), imod:'_person'};
   return {};
 }
-function fieldsOf(mod){ return mod === '_person' ? PERSON_FIELDS : (MODS[mod] && MODS[mod].fields) || []; }
+function fieldsOf(mod){ return mod === '_person' ? PERSON_FIELDS : mod === '_event' ? EVENT_FIELDS : (MODS[mod] && MODS[mod].fields) || []; }
 function openTasks(ev){ return ev.items.uppgifter.filter(function(t){ return t.status !== 'Klar'; }); }
 function lateTasks(ev){ return openTasks(ev).filter(function(t){ return diff(t.due) < 0; }); }
 function pct(ev){ var n = ev.items.uppgifter.length; return n ? Math.round(100 * (n - openTasks(ev).length) / n) : 0; }
@@ -74,20 +82,22 @@ function bar(p, cls){ return '<div class="bar ' + (cls || '') + '"><span style="
 function opts(list, v){ return list.map(function(o){ return '<option' + (o === v ? ' selected' : '') + '>' + esc(o) + '</option>'; }).join(''); }
 function cc(it){ var n = comments(it).length; return n ? '<span class="cc">' + n + ' komm.</span>' : ''; }
 function input(it, f, cls){
-  var k = f[0], v = it[k], a = ' data-f="' + k + '" data-id="' + it.id + '" aria-label="' + f[1] + '"';
+  var k = f[0], v = val(it, k), a = ' data-f="' + k + '" data-id="' + it.id + '" aria-label="' + f[1] + '"';
   if (kund()) return '<span class="inl">' + show(it, f) + '</span>';
   switch (f[2]){
     case 'status': return '<select class="st t-' + (TONE[v] || 'n') + '"' + a + '>' + opts(f[3], v) + '</select>';
     case 'select': return '<select class="' + cls + '"' + a + '>' + opts(f[3], v) + '</select>';
     case 'person': return '<select class="' + cls + '"' + a + '>' + S.people.map(function(p){ return '<option value="' + p.id + '"' + (p.id === v ? ' selected' : '') + '>' + esc(p.title) + '</option>'; }).join('') + '</select>';
-    case 'date': return '<input type="date" class="' + cls + '"' + a + ' value="' + esc(v) + '">';
+    case 'date': return '<input type="text" inputmode="numeric" placeholder="ÅÅ.MM.DD" maxlength="10" class="' + cls + '"' + a + ' value="' + fmt(v) + '">';
     case 'time': return '<input type="time" class="' + cls + '"' + a + ' value="' + esc(v) + '">';
     case 'number': case 'money': return '<input type="number" class="' + cls + '"' + a + ' value="' + esc(v) + '">';
+    case 'lines': return '<textarea class="' + cls + '" rows="4"' + a + '>' + esc((v || []).join('\n')) + '</textarea>';
+    case 'kv': return '<textarea class="' + cls + '" rows="5"' + a + '>' + esc(Object.keys(v || {}).map(function(x){ return x + ': ' + v[x]; }).join('\n')) + '</textarea>';
     default: return '<input type="text" class="' + cls + '"' + a + ' value="' + esc(v) + '">';
   }
 }
 function show(it, f){
-  var v = it[f[0]];
+  var v = val(it, f[0]);
   switch (f[2]){
     case 'status': return st(v);
     case 'person': return esc(pname(v));
@@ -186,21 +196,28 @@ function viewPeople(){
     var w = p.avtal ? (p.avtalslut && diff(p.avtalslut) <= 30 ? st('Löper ut ' + rel(p.avtalslut), 'warn') : st('Signerat')) : st('Saknas', 'bad');
     return '<tr class="rowlink' + (r.item === p.id ? ' sel' : '') + '" data-go="#/personal/' + p.id + '"><td class="t">' + esc(p.title) + '</td><td>' + esc(p.role) + '</td><td class="num">' + esc(p.tel) + '</td><td>' + esc(p.ort) + '</td><td>' + esc(p.cert) + '</td><td class="r">' + n + (krock ? ' ' + st('Krock') : '') + '</td><td>' + w + '</td></tr>';
   }).join('');
-  return page('Personalregister', 'Gemensamt för alla event. Personalen loggar inte in, de får en egen länk per event.', '',
+  return page('Personalregister', 'Gemensamt för alla event. Personalen loggar inte in, de får en egen länk per event.', '<button class="btn pri" data-act="addperson">Lägg till person</button>',
     '<div class="tw"><table><thead><tr><th>Namn</th><th>Roll</th><th>Telefon</th><th>Ort</th><th>Certifikat</th><th class="r">Kommande pass</th><th>Avtal</th></tr></thead><tbody>' + rows + '</tbody></table></div>');
 }
 function viewTemplates(){
-  return page('Mallar', 'Välj mall när eventet skapas. Uppgifterna läggs in med ansvarig och deadline räknad bakåt från eventdagen.', '',
-    Object.keys(TEMPLATES).map(function(k){
-      var t = TEMPLATES[k];
-      return '<div class="card"><header><h2>' + t.name + '</h2><span class="faint">' + t.tasks.length + ' uppgifter, ' + t.size + '</span></header><div style="padding:12px"><p style="margin:0 0 10px" class="muted">' + t.desc + '</p>' +
+  var keys = Object.keys(TEMPLATES);
+  return page('Mallar', 'Välj mall när eventet skapas. Uppgifterna läggs in med ansvarig och deadline räknad bakåt från eventdagen. Ändringar här gäller nya event.', '<button class="btn pri" data-act="tplnew">Ny mall</button>',
+    keys.map(function(k){
+      var t = TEMPLATES[k], order = t.tasks.map(function(x, i){ return i; }).sort(function(a, b){ return t.tasks[b][2] - t.tasks[a][2]; });
+      return '<div class="card"><header><input class="inl" style="font-weight:600;max-width:280px" data-tplf="' + k + '|name" value="' + esc(t.name) + '" aria-label="Mallens namn"><span class="faint">' + t.tasks.length + ' uppgifter</span></header><div style="padding:12px">' +
+        '<div class="fields" style="margin-bottom:10px"><label>Storlek</label><input class="inl" data-tplf="' + k + '|size" value="' + esc(t.size) + '" aria-label="Storlek"><label>Beskrivning</label><input class="inl" data-tplf="' + k + '|desc" value="' + esc(t.desc) + '" aria-label="Beskrivning"></div>' +
         '<div class="tools">' + PHASES.map(function(p, i){ var n = t.tasks.filter(function(x){ return x[0] === i; }).length; return n ? '<span class="tag">' + p + ' ' + n + '</span>' : ''; }).join('') + '</div>' +
-        '<details><summary class="muted" style="cursor:pointer">Visa alla uppgifter</summary>' + t.tasks.slice().sort(function(a, b){ return b[2] - a[2]; }).map(function(x){
-          return '<div class="task" style="cursor:default;grid-template-columns:1fr auto auto"><span>' + x[1] + '</span><span class="who">' + OWN[x[3]] + '</span><span class="due">' + (x[2] > 0 ? x[2] + ' d före' : x[2] === 0 ? 'Eventdagen' : -x[2] + ' d efter') + '</span></div>';
-        }).join('') + '</details></div></div>';
+        '<details data-tplk="' + k + '"' + (UI.tplOpen[k] ? ' open' : '') + '><summary class="muted" style="cursor:pointer">Visa och ändra uppgifterna</summary><div style="margin-top:8px"><div class="tplrow faint" style="font-size:12px"><span>Uppgift</span><span>Fas</span><span>Ansvarig</span><span>Dagar före</span><span></span></div>' + order.map(function(i){
+          var x = t.tasks[i], a = k + '|' + i + '|';
+          return '<div class="tplrow"><input class="inl" data-tt="' + a + '1" value="' + esc(x[1]) + '" aria-label="Uppgift">' +
+            '<select class="inl" data-tt="' + a + '0" aria-label="Fas">' + PHASES.map(function(p, pi){ return '<option value="' + pi + '"' + (pi === x[0] ? ' selected' : '') + '>' + p + '</option>'; }).join('') + '</select>' +
+            '<select class="inl" data-tt="' + a + '3" aria-label="Ansvarig">' + ['D', 'L', 'K'].map(function(o){ return '<option value="' + o + '"' + (o === x[3] ? ' selected' : '') + '>' + OWN[o] + '</option>'; }).join('') + '</select>' +
+            '<input type="number" class="inl num" data-tt="' + a + '2" value="' + x[2] + '" aria-label="Dagar före eventet" title="Minus betyder dagar efter eventet">' +
+            '<button class="btn quiet sm" data-act="tpldeltask" data-k="' + k + '" data-i="' + i + '">Ta bort</button></div>';
+        }).join('') + '<form class="addrow" data-addtpl="' + k + '"><input name="title" placeholder="Lägg till uppgift i mallen, tryck Enter" aria-label="Ny uppgift i mallen"></form></div></details>' +
+        (keys.length > 1 ? '<div class="sect"><span></span><button class="btn quiet sm" data-act="tpldel" data-k="' + k + '">Ta bort mallen</button></div>' : '') + '</div></div>';
     }).join(''));
 }
-
 
 /* ---------- Tidrapport ---------- */
 var AKT = ['Projektledning', 'Kundmöte', 'Produktion', 'På plats', 'Resa', 'Administration'];
@@ -222,7 +239,7 @@ function viewTime(){
     '<button class="btn" data-act="week" data-d="-1">Föregående</button><span class="num" style="min-width:150px;text-align:center"><b>Vecka ' + weekNo(ws) + '</b>, ' + fmt(days[0]) + ' till ' + fmt(days[6]) + '</span><button class="btn" data-act="week" data-d="1">Nästa</button>' +
     (UI.week ? '<button class="btn quiet" data-act="week" data-d="0">Denna vecka</button>' : '') + '</div>';
   var defDate = days.indexOf(iso(T0)) >= 0 ? iso(T0) : days[0], defWho = UI.tw === 'Båda' ? 'Daniel' : UI.tw;
-  var form = '<form id="timeform" class="tform"><input class="fi" type="date" name="date" value="' + defDate + '" aria-label="Datum" required>' +
+  var form = '<form id="timeform" class="tform"><input class="fi num" type="text" inputmode="numeric" placeholder="ÅÅ.MM.DD" maxlength="10" style="width:96px" name="date" value="' + fmt(defDate) + '" aria-label="Datum" required>' +
     '<select class="fi" name="who" aria-label="Vem">' + opts(['Daniel', 'Lasse'], defWho) + '</select>' +
     '<select class="fi" name="ev" aria-label="Event">' + S.events.map(function(e){ return '<option value="' + e.id + '">' + esc(e.name) + '</option>'; }).join('') + '<option value="">Internt, ej debiterbart</option></select>' +
     '<select class="fi" name="akt" aria-label="Aktivitet">' + opts(AKT, AKT[0]) + '</select>' +
@@ -230,14 +247,16 @@ function viewTime(){
     '<input class="fi" type="text" name="note" placeholder="Anteckning, valfri" aria-label="Anteckning" style="flex:1;min-width:140px"><button class="btn pri">Lägg till</button></form>';
   var rows = days.map(function(ds){
     var dl = list.filter(function(t){ return t.date === ds; }); if (!dl.length) return '';
-    return '<tr class="sum"><td colspan="5">' + fromIso(ds).toLocaleDateString('sv-SE', {weekday:'long', day:'numeric', month:'short'}).replace('.', '') + '</td><td class="r">' + hh(sum(dl)) + ' h</td><td></td></tr>' + dl.map(function(t){
-      return '<tr><td>' + esc(t.who) + '</td><td class="t">' + esc(evName(t.ev)) + '</td><td>' + esc(t.akt) + '</td><td class="muted" style="white-space:normal;min-width:180px">' + esc(t.note) + '</td>' +
+    return '<tr class="sum"><td colspan="6">' + fmtLong(ds) + '</td><td class="r">' + hh(sum(dl)) + ' h</td><td></td></tr>' + dl.map(function(t){
+      return '<tr><td><input type="text" inputmode="numeric" placeholder="ÅÅ.MM.DD" maxlength="10" class="inl num" style="width:86px" data-tf="' + t.id + '|date" value="' + fmt(t.date) + '" aria-label="Datum"></td><td><select class="inl" data-tf="' + t.id + '|who" aria-label="Vem">' + opts(['Daniel', 'Lasse'], t.who) + '</select></td>' +
+        '<td><select class="inl" data-tf="' + t.id + '|ev" aria-label="Event">' + S.events.map(function(e){ return '<option value="' + e.id + '"' + (e.id === t.ev ? ' selected' : '') + '>' + esc(e.name) + '</option>'; }).join('') + '<option value=""' + (t.ev ? '' : ' selected') + '>Internt</option></select></td>' +
+        '<td><select class="inl" data-tf="' + t.id + '|akt" aria-label="Aktivitet">' + opts(AKT, t.akt) + '</select></td><td><input class="inl" style="min-width:160px" data-tf="' + t.id + '|note" value="' + esc(t.note) + '" placeholder="Anteckning" aria-label="Anteckning"></td>' +
         '<td><input type="checkbox" class="cb" data-tdeb="' + t.id + '"' + (t.deb ? ' checked' : '') + ' aria-label="Debiterbar"></td>' +
         '<td class="r"><input type="number" class="inl num" style="width:72px;text-align:right" min="0" max="24" step="0.25" data-th="' + t.id + '" value="' + t.h + '" aria-label="Timmar"></td>' +
         '<td class="r"><button class="btn quiet sm" data-act="tdel" data-id="' + t.id + '">Ta bort</button></td></tr>';
     }).join('');
   }).join('');
-  var table = rows ? '<div class="tw"><table><thead><tr><th>Vem</th><th>Event</th><th>Aktivitet</th><th>Anteckning</th><th>Deb.</th><th class="r">Timmar</th><th></th></tr></thead><tbody>' + rows + '</tbody></table></div>' : empty('Inga timmar den här veckan', 'Lägg till första raden i formuläret ovan.');
+  var table = rows ? '<div class="tw"><table><thead><tr><th>Datum</th><th>Vem</th><th>Event</th><th>Aktivitet</th><th>Anteckning</th><th>Deb.</th><th class="r">Timmar</th><th></th></tr></thead><tbody>' + rows + '</tbody></table></div>' : empty('Inga timmar den här veckan', 'Lägg till första raden i formuläret ovan.');
   function perEv(a){
     var m = {}; a.forEach(function(t){ m[t.ev] = (m[t.ev] || 0) + (+t.h || 0); });
     var keys = Object.keys(m).sort(function(x, y){ return m[y] - m[x]; }), max = keys.length ? m[keys[0]] : 1;
@@ -273,14 +292,14 @@ function vOversikt(ev){
   }).join('') + '</div></div>';
   if (!kund()){
     var flags = [];
-    Object.keys(bad).length && flags.push(['Personal: ' + Object.keys(bad).length / 2 + ' krock i schemat', href(ev, 'personal')]);
+    Object.keys(bad).length && flags.push(['Personal: ' + Math.ceil(Object.keys(bad).length / 2) + ' krock i schemat', href(ev, 'personal')]);
     sh.filter(function(s){ return s.status === 'Nekad'; }).forEach(function(s){ flags.push(['Personal: ' + s.role + ' saknar ersättare', href(ev, 'personal', s.id)]); });
     ev.items.avtal.forEach(function(a){ var w = watch(a); if (w) flags.push(['Avtal: ' + a.title + ', ' + w[1].toLowerCase(), href(ev, 'avtal', a.id)]); });
     (ev.risks || []).forEach(function(x){ flags.push([x, '']); });
     h += '<div class="card"><header><h2>Att hålla koll på</h2><span class="faint">' + flags.length + '</span></header>' + (flags.map(function(f){ return '<div class="task" style="grid-template-columns:1fr' + (f[1] ? '' : ';cursor:default') + '"' + (f[1] ? ' data-go="' + f[1] + '"' : '') + '><span>' + esc(f[0]) + '</span></div>'; }).join('') || empty('Lugnt', 'Inga flaggor.')) + '</div>';
   }
-  h += '<div class="card"><header><h2>Fakta</h2></header><div style="padding:8px 12px"><div class="fields" style="margin:0"><label>Datum</label><span>' + fmtLong(ev.date) + '</span><label>Lokal</label><span>' + esc(ev.venue) + '</span><label>Adress</label><span>' + esc(ev.address || 'Ej angiven') + '</span><label>Mall</label><span>' + TEMPLATES[ev.tpl].name + '</span></div></div></div>';
-  return page(esc(ev.name), esc(ev.client) + ', ' + fmtLong(ev.date), st(health(ev)), h + '</div></div>');
+  h += '<div class="card"><header><h2>Fakta</h2></header><div style="padding:8px 12px"><div class="fields" style="margin:0"><label>Datum</label><span>' + fmtLong(ev.date) + '</span><label>Lokal</label><span>' + esc(ev.venue) + '</span><label>Adress</label><span>' + esc(ev.address || 'Ej angiven') + '</span><label>Mall</label><span>' + tplName(ev) + '</span></div></div></div>';
+  return page(esc(ev.name), esc(ev.client) + ', ' + fmtLong(ev.date), st(health(ev)) + (kund() ? '' : '<a class="btn" href="' + href(ev, 'oversikt', 'event') + '">Redigera event</a>'), h + '</div></div>');
 }
 function vUppgifter(ev){
   var f = kund() ? 'Kund' : UI.taskFilter;
@@ -312,7 +331,7 @@ function vUppgifter(ev){
         (kund() ? '' : '<form class="addrow" data-add="uppgifter" data-phase-name="' + ph + '"><input name="title" placeholder="Lägg till uppgift i ' + ph.toLowerCase() + ', tryck Enter" aria-label="Ny uppgift i ' + ph + '"></form>') + '</div></section>';
     }).join('') || empty('Inget att visa', 'Inga uppgifter matchar filtret.');
   }
-  return page(kund() ? 'Att göra' : 'Uppgifter', openTasks(ev).length + ' öppna, ' + lateTasks(ev).length + ' försenade', '', kundBanner(ev) + tools + body);
+  return page(kund() ? 'Att göra' : 'Uppgifter', openTasks(ev).length + ' öppna, ' + lateTasks(ev).length + ' försenade', addBtn('uppgifter'), kundBanner(ev) + tools + body);
 }
 function supplierName(ev){ var s = ev.items.leverantorer.filter(function(l){ return l.kategori === 'Förtäring'; })[0]; return s ? s.title : 'Förtäring'; }
 function schemaRows(ev){
@@ -342,7 +361,7 @@ function vSchema(ev){
       return '<div class="srow rowlink" data-go="' + r.go + '"><span class="mono">' + r.start + (r.end ? ' ' + r.end : '') + '</span><span>' + esc(r.title) + '</span><span class="muted x">' + esc(r.who) + '</span><span class="muted x">' + esc(r.plats) + '</span><span class="tag x">' + r.typ + '</span></div>';
     }).join('') + '</div>';
   }).join('') || empty('Inget schema än', 'Schemat fylls på från personal, förtäring, underhållning och egna punkter.');
-  return page('Huvudschema', 'Ett schema för allt. Pass, soundcheck och serveringar hämtas automatiskt från sina moduler.', '', tools + body +
+  return page('Huvudschema', 'Ett schema för allt. Pass, soundcheck och serveringar hämtas automatiskt från sina moduler.', addBtn('schema'), tools + body +
     (kund() ? '' : '<form class="addrow" data-add="schema" style="border:1px solid var(--line);border-radius:var(--r);margin-top:12px"><input name="title" placeholder="Lägg till egen schemapunkt, tryck Enter" aria-label="Ny schemapunkt"></form>'));
 }
 function cueTimes(ev){ var t = tmin(ev.runStart); return ev.items.korschema.map(function(c){ var o = {c:c, start:t, end:t + (+c.dur || 0)}; t = o.end; return o; }); }
@@ -364,7 +383,7 @@ function vKorschema(ev){
     var cls = L ? (L.t >= x.end ? ' past' : L.t >= x.start ? ' cur' : '') : '';
     return '<tr class="rowlink cue' + cls + (r.item === x.c.id ? ' sel' : '') + '" data-go="' + href(ev, 'korschema', x.c.id) + '"><td class="mono">' + mfmt(x.start) + '</td><td class="r">' + x.c.dur + ' min</td><td class="t">' + esc(x.c.title) + '</td><td><span class="tag">' + esc(x.c.typ) + '</span></td><td>' + esc(x.c.plats) + '</td><td>' + esc(x.c.owner) + '</td><td class="muted">' + esc(x.c.tech) + '</td><td>' + cc(x.c) + '</td></tr>';
   }).join('');
-  return page('Körschema', 'Tiderna räknas ut från start och längd. Ändra en längd så flyttas allt efter.', '', kundBanner(ev) + live + tools +
+  return page('Körschema', 'Tiderna räknas ut från start och längd. Ändra en längd så flyttas allt efter.', addBtn('korschema'), kundBanner(ev) + live + tools +
     '<div class="tw"><table><thead><tr><th>Tid</th><th class="r">Längd</th><th>Punkt</th><th>Typ</th><th>Plats</th><th>Ansvarig</th><th>Teknik</th><th></th></tr></thead><tbody>' + rows + '</tbody></table>' +
     (kund() ? '' : '<form class="addrow" data-add="korschema"><input name="title" placeholder="Lägg till punkt sist, tryck Enter" aria-label="Ny punkt"></form>') + '</div>');
 }
@@ -385,7 +404,7 @@ function vPersonal(ev){
   sh.forEach(function(s){ if (ids.indexOf(s.person) < 0) ids.push(s.person); });
   var conf = sh.filter(function(s){ return s.status === 'Bekräftad'; }).length, cost = sh.reduce(function(a, s){ return a + (s.status === 'Nekad' ? 0 : +s.arvode); }, 0);
   var h = '<div class="stats"><div class="stat"><span>Pass</span><b>' + sh.length + '</b></div><div class="stat"><span>Bekräftade</span><b>' + conf + '<small>av ' + sh.length + '</small></b></div>' +
-    '<div class="stat"><span>Krockar</span><b class="' + (Object.keys(bad).length ? 'bad' : '') + '">' + Object.keys(bad).length / 2 + '</b></div><div class="stat"><span>Arvoden</span><b>' + kr(cost).replace(' kr', '') + '<small>kr</small></b></div></div>';
+    '<div class="stat"><span>Krockar</span><b class="' + (Object.keys(bad).length ? 'bad' : '') + '">' + Math.ceil(Object.keys(bad).length / 2) + '</b></div><div class="stat"><span>Arvoden</span><b>' + kr(cost).replace(' kr', '') + '<small>kr</small></b></div></div>';
   if (Object.keys(bad).length) h += '<div class="banner warn"><span><b>Krock i schemat.</b> ' + sh.filter(function(s){ return bad[s.id]; }).map(function(s){ return esc(s.title) + ' ' + s.start + ' till ' + s.end; }).join(' och ') + '.</span></div>';
   if (sh.length){
     h += '<div class="tl"><div class="in"><div class="tlrow hd"><div class="nm">Eventdagen</div><div class="lane">' + [6,8,10,12,14,16,18,20,22].map(function(x){ return '<span>' + String(x).padStart(2, '0') + '</span>'; }).join('') + '</div></div>' +
@@ -396,7 +415,7 @@ function vPersonal(ev){
         }).join('') + '</div></div>';
       }).join('') + '</div></div>';
   }
-  return page('Personal', 'Du och Lasse bokar. Varje person får en egen länk med kalltid och schema, utan inloggning.', '', h + table(ev, 'personal', ['Koll', function(s){ return bad[s.id] ? st('Krock') : ''; }]));
+  return page('Personal', 'Du och Lasse bokar. Varje person får en egen länk med kalltid och schema, utan inloggning.', addBtn('personal'), h + table(ev, 'personal', ['Koll', function(s){ return bad[s.id] ? st('Krock') : ''; }]));
 }
 function vGeneric(ev, mod){
   var top = '', sub = {leverantorer:'Allt per leverantör: kontakt, status, belopp och nästa frist.', underhallning:'Artister och talare: status, tider, rider och loge.', teknik:'Utrustningslista med leverantör, strömbehov och status.', fortaring:'Serveringar med tider och antal. Specialkost hämtas från gästlistan.', budget:'Budget mot utfall, post för post.', avtal:'Avtal och kontrakt som PDF, med bevakning av slutdatum.'}[mod];
@@ -413,7 +432,7 @@ function vGeneric(ev, mod){
     top = '<div class="card"><header><h2>Specialkost från gästlistan</h2><span class="faint">' + ev.osa.ja + ' har tackat ja</span></header><div class="tools" style="padding:10px 12px;margin:0">' + (k.map(function(x){ return '<span class="tag">' + x + ' ' + ev.kost[x] + '</span>'; }).join('') || '<span class="muted">Inga svar än.</span>') + '</div></div>';
   }
   if (mod === 'teknik'){ var cats = {}; ev.items.teknik.forEach(function(t){ cats[t.kategori] = (cats[t.kategori] || 0) + (+t.antal || 0); }); top = '<div class="tools">' + Object.keys(cats).map(function(c){ return '<span class="tag">' + c + ' ' + cats[c] + ' st</span>'; }).join('') + '</div>'; }
-  return page(MODS[mod].name, sub, right, top + table(ev, mod, extra));
+  return page(MODS[mod].name, sub, (mod === 'budget' ? '<a class="btn" href="' + href(ev, 'budget', 'event') + '">Ändra offererat</a>' : '') + right + addBtn(mod), top + table(ev, mod, extra));
 }
 function commentsBlock(it){
   var cs = comments(it), h = '<div class="sect"><span>Kommentarer</span><span>' + cs.length + '</span></div>';
@@ -431,12 +450,15 @@ function vLokal(ev){
   L.facts.forEach(function(f){ if (secs.indexOf(f[0]) < 0) secs.push(f[0]); });
   if (!L.facts.length) return page('Lokal', esc(ev.venue), '', empty('Inga lokalfakta än', 'Fyll i från lokalens faktablad: kapacitet, el, lastväg, tider och regler.', '<button class="btn pri" data-act="lokalmall">Lägg in standardfälten</button>'));
   var facts = '<div class="facts">' + secs.map(function(s){
-    return '<section><h3>' + s + '</h3>' + L.facts.map(function(f, i){ return f[0] !== s ? '' : '<div class="fact"><label for="fact' + i + '">' + esc(f[1]) + '</label><input id="fact' + i + '" class="inl" data-fact="' + i + '" value="' + esc(f[2]) + '"></div>'; }).join('') + '</section>';
+    return '<section><h3><input class="inl" style="font-weight:600" data-factsec="' + esc(s) + '" value="' + esc(s) + '" aria-label="Sektionens namn"></h3>' + L.facts.map(function(f, i){
+      return f[0] !== s ? '' : '<div class="fact"><input class="inl muted" data-factl="' + i + '" value="' + esc(f[1]) + '" aria-label="Fältnamn"><input class="inl" data-fact="' + i + '" value="' + esc(f[2]) + '" aria-label="' + esc(f[1]) + '"><button class="btn quiet sm" data-act="factdel" data-i="' + i + '" aria-label="Ta bort ' + esc(f[1]) + '">Ta bort</button></div>';
+    }).join('') + '<form class="addrow" data-addfact="' + esc(s) + '"><input name="label" placeholder="Lägg till fält, tryck Enter" aria-label="Nytt fält i ' + esc(s) + '"></form></section>';
   }).join('') + '</div>';
-  return page('Lokal', esc(ev.venue) + ', ' + esc(ev.address), '<a class="btn" href="' + href(ev, 'lokal', 'lokal') + '">Kommentarer ' + comments(L).length + '</a>', facts);
+  return page('Lokal', esc(ev.venue) + ', ' + esc(ev.address) + '. Klicka i ett fält för att ändra, både namn och värde.', '<button class="btn" data-act="factsec">Ny sektion</button><a class="btn" href="' + href(ev, 'lokal', 'lokal') + '">Kommentarer ' + comments(L).length + '</a>', facts);
 }
 function planSvg(kind){
   var s = '<rect x="20" y="20" width="760" height="480" fill="var(--bg)" stroke="currentColor" stroke-width="2"/>';
+  if (kind === 'tom') return '<svg viewBox="0 0 800 520" role="img" aria-label="Tom ritning">' + s + '<text x="400" y="264" text-anchor="middle" font-size="14" fill="currentColor">Ingen ritning uppladdad än</text></svg>';
   function box(x, y, w, h, t){ return '<rect x="' + x + '" y="' + y + '" width="' + w + '" height="' + h + '" fill="var(--bg3)" stroke="currentColor"/><text x="' + (x + w / 2) + '" y="' + (y + h / 2 + 4) + '" text-anchor="middle" font-size="12" fill="currentColor">' + t + '</text>'; }
   if (kind === 'sal'){
     s += box(280, 34, 240, 66, 'Scen 8 x 4 m') + '<line x1="290" y1="30" x2="510" y2="30" stroke="var(--accent)" stroke-width="4"/>' + box(350, 448, 100, 40, 'Teknik') + box(32, 190, 38, 150, 'Bar') + box(730, 190, 38, 150, 'Bar');
@@ -459,10 +481,10 @@ function vRitningar(ev){
     '<button class="btn' + (UI.pinMode ? ' pri' : '') + '" data-act="pinmode">' + (UI.pinMode ? 'Klicka på ritningen' : 'Sätt nål') + '</button></div>';
   var canvas = '<div class="canvas' + (UI.pinMode ? ' add' : '') + '" id="canvas">' + planSvg(d.kind) + pins.map(function(p, i){ return '<button class="pin' + (p.done ? ' done' : '') + '" style="left:' + p.x + '%;top:' + p.y + '%" aria-label="Nål ' + (i + 1) + ': ' + esc(p.text) + '" title="' + esc(p.text) + '">' + (i + 1) + '</button>'; }).join('') + '</div>';
   var list = '<div class="card" style="margin:0"><header><h2>Nålar</h2><span class="faint">' + pins.filter(function(p){ return !p.done; }).length + ' öppna</span></header>' + (pins.map(function(p, i){
-    return '<div class="pinitem' + (p.done ? ' done' : '') + '"><span class="n">' + (i + 1) + '</span><div>' + (p.edit ? '<input type="text" data-pintext="' + p.id + '" placeholder="Skriv kommentaren, tryck Enter" aria-label="Kommentar till nål">' : '<p>' + esc(p.text) + '</p>') +
-      '<span class="faint" style="font-size:12px">' + esc(p.who) + (kund() ? '' : ', ' + (p.vis === 'kund' ? 'synlig för kund' : 'intern')) + '</span></div><input type="checkbox" class="cb" data-pindone="' + p.id + '"' + (p.done ? ' checked' : '') + ' aria-label="Löst"></div>';
+    return '<div class="pinitem' + (p.done ? ' done' : '') + '"><span class="n">' + (i + 1) + '</span><div>' + (p.edit ? '<input type="text" data-pintext="' + p.id + '" value="' + esc(p.text) + '" placeholder="Skriv kommentaren, tryck Enter" aria-label="Kommentar till nål">' : '<p data-act="pinedit" data-id="' + p.id + '" title="Klicka för att ändra" style="cursor:text">' + esc(p.text) + '</p>') +
+      '<span class="faint" style="font-size:12px">' + esc(p.who) + (kund() ? '' : ', ' + (p.vis === 'kund' ? 'synlig för kund' : 'intern')) + '</span>' + (kund() && p.who !== 'Kund' ? '' : ' <button class="btn quiet sm" data-act="pindel" data-id="' + p.id + '">Ta bort</button>') + '</div><input type="checkbox" class="cb" data-pindone="' + p.id + '"' + (p.done ? ' checked' : '') + ' aria-label="Löst"></div>';
   }).join('') || '<div class="empty">Inga nålar. Välj Sätt nål och klicka på ritningen.</div>') + '</div>';
-  return page('Ritningar', 'Kommentera direkt på ritningen. Varje nål är en tråd som kan bockas av.', '', kundBanner(ev) + tabs + '<div class="plan">' + canvas + list + '</div><p class="faint">Ritningen är ett exempel ritat i prototypen. I riktiga appen laddar du upp PDF eller bild, med versioner.</p>');
+  return page('Ritningar', 'Kommentera direkt på ritningen. Varje nål är en tråd som kan bockas av.', '', kundBanner(ev) + tabs + (kund() ? '' : '<div class="tools"><label class="muted" for="dname">Namn</label><input id="dname" class="fi" data-f="title" data-id="' + d.id + '" value="' + esc(d.title) + '"><label class="muted" for="dver">Version</label><input id="dver" class="fi" style="width:70px" data-f="version" data-id="' + d.id + '" value="' + esc(d.version) + '"><button class="btn" data-act="upload">Ladda upp fil</button><div class="sp"></div><button class="btn quiet" data-act="deldraw">Ta bort ritningen</button><button class="btn pri" data-act="addfirst" data-mod="ritningar">Lägg till ritning</button></div>') + '<div class="plan">' + canvas + list + '</div><p class="faint">Ritningen är ett exempel ritat i prototypen. I riktiga appen laddar du upp PDF eller bild, med versioner.</p>');
 }
 function art(it){
   var a = it.c1 || '#333', b = it.c2 || '#999', s = '', h = 200;
@@ -484,7 +506,7 @@ function vMoodboard(ev){
 }
 function vGaster(ev){
   var o = ev.osa, wait = Math.max(ev.guests - o.ja - o.nej, 0), k = Object.keys(ev.kost || {});
-  return page('Gäster', 'OSA-sidan byggs separat per event. Här syns siffrorna.', '', kundBanner(ev) +
+  return page('Gäster', 'OSA-sidan byggs separat per event. Här syns siffrorna.', kund() ? '' : '<a class="btn" href="' + href(ev, 'gaster', 'event') + '">Uppdatera siffror</a>', kundBanner(ev) +
     '<div class="stats"><div class="stat"><span>Platser</span><b>' + ev.guests + '</b></div><div class="stat"><span>Tackat ja</span><b>' + o.ja + '</b></div><div class="stat"><span>Tackat nej</span><b>' + o.nej + '</b></div><div class="stat"><span>Inget svar</span><b>' + wait + '</b></div></div>' +
     '<div class="card"><header><h2>Beläggning</h2><span class="faint num">' + Math.round(100 * o.ja / ev.guests) + ' % av platserna</span></header><div style="padding:14px 12px">' + bar(Math.round(100 * o.ja / ev.guests), 'wide') + '</div></div>' +
     '<div class="card"><header><h2>Specialkost</h2></header><div class="tools" style="padding:10px 12px;margin:0">' + (k.map(function(x){ return '<span class="tag">' + x + ' ' + ev.kost[x] + '</span>'; }).join('') || '<span class="muted">Inga svar än.</span>') + '</div></div>' +
@@ -509,10 +531,11 @@ function viewShare(){
 /* ---------- Sidopanel ---------- */
 function renderPanel(){
   var c = ctx(), el = $('#panel'), r = route();
-  if (!c || !c.it || c.imod === 'ritningar'){ document.body.classList.remove('has-panel'); el.hidden = true; el.innerHTML = ''; return; }
+  if (!c || !c.it || c.imod === 'ritningar' || (kund() && c.imod === '_event')){ document.body.classList.remove('has-panel'); el.hidden = true; el.innerHTML = ''; return; }
   var it = c.it, mod = c.imod, ev = c.ev, F = fieldsOf(mod), close = ev ? href(ev, r.mod) : '#/personal';
-  var h = '<header><span>' + (mod === '_person' ? 'Personalregister' : MODS[mod].name) + '</span><a class="btn quiet sm" href="' + close + '" aria-label="Stäng panelen">Stäng</a></header><div class="body">';
-  h += mod === 'lokal' || mod === 'personal' || kund() ? '<h2 style="font-size:17px;margin-bottom:12px">' + esc(it.title) + '</h2>' : '<input class="ttl" data-f="title" data-id="' + it.id + '" value="' + esc(it.title) + '" aria-label="Namn">';
+  var h = '<header><span>' + (mod === '_person' ? 'Personalregister' : mod === '_event' ? 'Eventinställningar' : MODS[mod].name) + '</span><a class="btn quiet sm" href="' + close + '" aria-label="Stäng panelen">Stäng</a></header><div class="body">';
+  h += mod === 'lokal' || mod === 'personal' || kund() ? '<h2 style="font-size:17px;margin-bottom:12px">' + esc(it.title) + '</h2>' : '<input class="ttl" data-f="' + (mod === '_event' ? 'name' : 'title') + '" data-id="' + it.id + '" value="' + esc(mod === '_event' ? it.name : it.title) + '" aria-label="Namn">';
+  if (mod === '_event') h += '<p class="faint" style="margin:-6px 0 12px">Byter du datum flyttas inte uppgifternas deadlines automatiskt.</p>';
   if (F.length) h += '<div class="fields">' + F.map(function(f){ return '<label>' + f[1] + '</label>' + (f[2] === 'status' ? '<div>' + input(it, f) + '</div>' : input(it, f, 'inl')); }).join('') + '</div>';
   if (mod === 'korschema' && !kund()){ var x = cueTimes(ev).filter(function(q){ return q.c === it; })[0]; h += '<div class="tools"><span class="mono">' + mfmt(x.start) + ' till ' + mfmt(x.end) + '</span><div class="sp"></div><button class="btn sm" data-act="cueup">Flytta upp</button><button class="btn sm" data-act="cuedown">Flytta ned</button></div>'; }
   if (mod === 'personal'){ var bad = conflicts(ev); h += (bad[it.id] ? '<div class="banner warn"><span>Krockar med ett annat pass för samma person.</span></div>' : '') + '<div class="tools"><a class="btn sm" href="#/dela/' + ev.id + '/' + it.person + '">Förhandsvisa personens länk</a><button class="btn sm" data-act="send">Skicka kalltid</button></div>'; }
@@ -525,7 +548,7 @@ function renderPanel(){
   }
   h += commentsBlock(it);
   if (!kund() && it.log && it.log.length) h += '<div class="sect"><span>Historik</span></div>' + it.log.slice(0, 8).map(function(l){ return '<div class="logrow">' + esc(l.who) + ': ' + esc(l.text) + ', ' + ago(l.at) + '</div>'; }).join('');
-  if (!kund() && ev && mod !== 'lokal') h += '<div class="sect"><span></span><button class="btn quiet sm" data-act="del">Ta bort</button></div>';
+  if (!kund() && mod !== 'lokal') h += '<div class="sect"><span></span><button class="btn quiet sm" data-act="del">' + (mod === '_event' ? 'Ta bort eventet' : mod === '_person' ? 'Ta bort personen' : 'Ta bort') + '</button></div>';
   el.innerHTML = h + '</div>'; el.hidden = false;
   document.body.classList.add('has-panel');
 }
@@ -546,7 +569,8 @@ function render(keep){
   $('#main').scrollTop = keep ? y : 0;
 }
 var lastPath = '';
-window.addEventListener('hashchange', function(){ var r = route(), path = r.view + '/' + (r.ev || '') + '/' + (r.mod || ''); UI.draft = ''; UI.pinMode = false; render(path === lastPath); lastPath = path; });
+window.addEventListener('hashchange', function(){ var r = route(), path = r.view + '/' + (r.ev || '') + '/' + (r.mod || ''); UI.draft = ''; UI.pinMode = false; render(path === lastPath); lastPath = path;
+  if (UI.focusNew){ UI.focusNew = false; var fe = $('#panel .ttl') || $('#panel .fields input, #panel .fields select'); if (fe){ fe.focus(); fe.select && fe.select(); } } });
 
 function toast(msg, undo){
   var el = $('#toast'); el.innerHTML = '<span>' + esc(msg) + '</span>' + (undo ? '<button data-act="undo">Ångra</button>' : ''); el.hidden = false; UI.undo = undo || null;
@@ -557,7 +581,7 @@ function addItem(ev, mod, title, extra){
   var d = {uppgifter:{status:'Att göra', phase:PHASES[0], owner:'Daniel', due:ev.date}, schema:{day:'Eventdagen', start:'12:00', end:'13:00', who:'Daniel', plats:'', typ:'Program'}, korschema:{dur:10, typ:'Scen', plats:'Scenen', owner:'', tech:''},
     personal:{person:S.people[0].id, role:title, call:'15:45', start:'16:00', end:'22:00', plats:'', status:'Tillfrågad', arvode:S.people[0].arvode, utskick:'Inte skickat'}, leverantorer:{kategori:'', kontakt:'', tel:'', status:'Förfrågan', belopp:0, frist:ev.date, last:''},
     underhallning:{status:'Option', gage:0, speltid:'', set:0, soundcheck:'', inlast:'', rider:'', loge:'', kontakt:''}, teknik:{antal:1, kategori:'Ljud', lev:'', strom:'', 'in':'', status:'Beställd'}, fortaring:{tid:'18:00', antal:ev.guests, garanti:0, satt:'', plats:'', status:'Utkast'},
-    budget:{budget:0, utfall:0, status:'Preliminär'}, avtal:{motpart:'', typ:'Leverantör', status:'Utkast', start:iso(T0), slut:ev.date, uppsagning:'', pdf:''}, moodboard:{typ:'Anteckning', c1:''}}[mod] || {};
+    budget:{budget:0, utfall:0, status:'Preliminär'}, ritningar:{version:'v1', kind:'tom', status:'Utkast', pins:[]}, avtal:{motpart:'', typ:'Leverantör', status:'Utkast', start:iso(T0), slut:ev.date, uppsagning:'', pdf:''}, moodboard:{typ:'Anteckning', c1:''}}[mod] || {};
   var it = Object.assign({id:uid('n'), title:title, comments:[], log:[]}, d, extra || {});
   if (mod === 'personal') it.title = pname(it.person) + ', ' + it.role;
   logIt(it, 'Skapad'); ev.items[mod].push(it); save(); return it;
@@ -594,7 +618,7 @@ function act(name, el, c){
     case 'theme': S.theme = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark'; save(); render(true); break;
     case 'pal': openPal(); break;
     case 'print': window.print(); break;
-    case 'reset': if (confirm('Återställa demon till exempeldatan?')){ S = seed(); save(); location.hash = '#/'; render(false); } break;
+    case 'reset': if (confirm('Återställa demon till exempeldatan?')){ TEMPLATES = JSON.parse(TEMPLATES0); S = seed(); S.templates = TEMPLATES; save(); location.hash = '#/'; render(false); } break;
     case 'new': newDialog(); break;
     case 'close': $('#dlg').close(); break;
     case 'upload': toast('Uppladdning finns i riktiga appen. Här är det exempelfiler.'); break;
@@ -603,13 +627,26 @@ function act(name, el, c){
     case 'confirm': getEv(el.dataset.ev).items.personal.forEach(function(s){ if (s.person === el.dataset.person && s.status !== 'Nekad'){ s.status = 'Bekräftad'; s.utskick = 'Bekräftat'; logIt(s, 'Bekräftad via länk'); } }); save(); render(true); break;
     case 'pinmode': UI.pinMode = !UI.pinMode; render(true); break;
     case 'appr': setAppr(ev, el.dataset.target, el.dataset.val); break;
-    case 'addnote': location.hash = href(ev, 'moodboard', addItem(ev, 'moodboard', 'Ny anteckning').id); break;
-    case 'addcolor': location.hash = href(ev, 'moodboard', addItem(ev, 'moodboard', 'Ny färg', {typ:'Färg', c1:'#4a45d6'}).id); break;
-    case 'addcue': location.hash = href(ev, 'korschema', addItem(ev, 'korschema', 'Ny punkt').id); break;
-    case 'addfirst': location.hash = href(ev, el.dataset.mod, addItem(ev, el.dataset.mod, 'Ny ' + MODS[el.dataset.mod].one).id); break;
+    case 'addnote': UI.focusNew = true; location.hash = href(ev, 'moodboard', addItem(ev, 'moodboard', 'Ny anteckning').id); break;
+    case 'addcolor': UI.focusNew = true; location.hash = href(ev, 'moodboard', addItem(ev, 'moodboard', 'Ny färg', {typ:'Färg', c1:'#4a45d6'}).id); break;
+    case 'addcue': UI.focusNew = true; location.hash = href(ev, 'korschema', addItem(ev, 'korschema', 'Ny punkt').id); break;
+    case 'addfirst': UI.focusNew = true; location.hash = href(ev, el.dataset.mod, addItem(ev, el.dataset.mod, NY[el.dataset.mod]).id); break;
     case 'lokalmall': ev.lokal.facts = [['Grund','Adress',ev.address],['Grund','Tillträde',''],['Grund','Sluttid',''],['Kapacitet','Sittande',''],['Kapacitet','Stående',''],['Kapacitet','Takhöjd',''],['Teknik och el','El',''],['Teknik och el','Nät',''],['Logistik','Lastkaj',''],['Logistik','Parkering',''],['Regler','Ljudgräns',''],['Kontakt','Platsansvarig','']]; save(); render(true); break;
     case 'cueup': case 'cuedown': var list = ev.items.korschema, i = list.indexOf(it), j = i + (name === 'cueup' ? -1 : 1); if (j >= 0 && j < list.length){ list.splice(i, 1); list.splice(j, 0, it); save(); render(true); } break;
-    case 'del': var arr = ev.items[c.imod], idx = arr.indexOf(it); arr.splice(idx, 1); save(); location.hash = href(ev, r.mod); toast('”' + it.title + '” borttagen.', function(){ arr.splice(idx, 0, it); save(); render(true); }); break;
+    case 'del':
+      if (c.imod === '_event' && !confirm('Ta bort hela eventet ' + it.name + '?')) break;
+      var arr = c.imod === '_event' ? S.events : c.imod === '_person' ? S.people : ev.items[c.imod], idx = arr.indexOf(it);
+      arr.splice(idx, 1); save(); location.hash = c.imod === '_event' ? '#/' : c.imod === '_person' ? '#/personal' : href(ev, r.mod);
+      toast('”' + (it.title || it.name) + '” borttagen.', function(){ arr.splice(idx, 0, it); save(); render(true); }); break;
+    case 'factdel': ev.lokal.facts.splice(+el.dataset.i, 1); save(); render(true); break;
+    case 'factsec': ev.lokal.facts.push(['Ny sektion', 'Nytt fält', '']); save(); render(true); var ns = document.querySelector('[data-factsec="Ny sektion"]'); if (ns){ ns.focus(); ns.select(); } break;
+    case 'addperson': var np = {id:uid('p'), title:'Ny person', role:'', tel:'', mejl:'', ort:'', cert:'', arvode:0, avtal:'', avtalslut:'', comments:[], log:[]}; S.people.push(np); save(); UI.focusNew = true; location.hash = '#/personal/' + np.id; break;
+    case 'pinedit': findItem(ev, UI.drawing).it.pins.forEach(function(x){ if (x.id === el.dataset.id) x.edit = true; }); render(true); var pe = $('[data-pintext]'); if (pe){ pe.focus(); pe.select(); } break;
+    case 'pindel': var dd = findItem(ev, UI.drawing).it; dd.pins = dd.pins.filter(function(x){ return x.id !== el.dataset.id; }); save(); render(true); break;
+    case 'deldraw': var da = ev.items.ritningar, di = da.indexOf(findItem(ev, UI.drawing).it), dx = da[di]; if (!confirm('Ta bort ritningen ' + dx.title + '?')) break; da.splice(di, 1); UI.drawing = null; save(); location.hash = href(ev, 'ritningar'); render(true); break;
+    case 'tplnew': var tk = uid('m'); TEMPLATES[tk] = {name:'Ny mall', size:'', desc:'', tasks:[]}; UI.tplOpen[tk] = true; save(); render(true); break;
+    case 'tpldel': if (confirm('Ta bort mallen ' + TEMPLATES[el.dataset.k].name + '?')){ delete TEMPLATES[el.dataset.k]; save(); render(true); } break;
+    case 'tpldeltask': TEMPLATES[el.dataset.k].tasks.splice(+el.dataset.i, 1); save(); render(true); break;
     case 'week': UI.week = +el.dataset.d ? UI.week + (+el.dataset.d) : 0; render(true); break;
     case 'tdel': var te = S.time.filter(function(x){ return x.id === el.dataset.id; })[0], ti = S.time.indexOf(te); S.time.splice(ti, 1); save(); render(true); toast(hh(te.h) + ' h borttagna.', function(){ S.time.splice(ti, 0, te); save(); render(true); }); break;
     case 'undo': UI.undo && UI.undo(); $('#toast').hidden = true; break;
@@ -630,10 +667,20 @@ document.addEventListener('change', function(e){
   if (t.dataset.f){
     var found = c.imod === '_person' ? {it:c.it, mod:'_person'} : ev && findItem(ev, t.dataset.id); if (!found) return;
     var it = found.it, k = t.dataset.f, f = fieldsOf(found.mod).filter(function(x){ return x[0] === k; })[0];
-    it[k] = t.type === 'number' ? +t.value : t.value;
+    var nv = t.type === 'number' ? +t.value : t.value;
+    if (f && f[2] === 'date'){ nv = t.value.trim() ? parseDate(t.value) : ''; if (nv === null){ toast('Skriv datumet som ÅÅ.MM.DD, till exempel ' + fmt(iso(T0)) + '.'); render(true); return; } }
+    if (f && f[2] === 'lines') nv = t.value.split('\n').map(function(x){ return x.trim(); }).filter(Boolean);
+    if (f && f[2] === 'kv'){ nv = {}; t.value.split('\n').forEach(function(x){ var p = x.split(':'); if (p[0].trim()) nv[p[0].trim()] = +(p[1] || 0) || 0; }); }
+    setVal(it, k, nv);
+    if (found.mod === '_event' && k === 'venue') ev.lokal.title = nv;
     if (found.mod === 'personal'){ if (k === 'person') it.arvode = person(it.person).arvode; it.title = pname(it.person) + ', ' + it.role; }
-    logIt(it, (f ? f[1] : 'Namn') + ': ' + (f && f[2] === 'person' ? pname(it[k]) : f && f[2] === 'date' ? fmt(it[k]) : it[k])); save(); render(true); return;
+    logIt(it, (f ? f[1].split(',')[0] : 'Namn') + (f && (f[2] === 'lines' || f[2] === 'kv') ? ' ändrad' : ': ' + (f && f[2] === 'person' ? pname(nv) : f && f[2] === 'date' ? fmt(nv) : nv))); save(); render(true); return;
   }
+  if (t.dataset.factl){ ev.lokal.facts[+t.dataset.factl][1] = t.value; save(); return; }
+  if (t.dataset.factsec != null && t.hasAttribute('data-factsec')){ var nyttNamn = t.value.trim() || t.dataset.factsec; ev.lokal.facts.forEach(function(x){ if (x[0] === t.dataset.factsec) x[0] = nyttNamn; }); save(); render(true); return; }
+  if (t.dataset.tplf){ var tp = t.dataset.tplf.split('|'); TEMPLATES[tp[0]][tp[1]] = t.value; save(); return; }
+  if (t.dataset.tt){ var q = t.dataset.tt.split('|'), row = TEMPLATES[q[0]].tasks[+q[1]]; row[+q[2]] = (q[2] === '0' || q[2] === '2') ? +t.value : t.value; save(); render(true); return; }
+  if (t.dataset.tf){ var tq = t.dataset.tf.split('|'), tre = S.time.filter(function(x){ return x.id === tq[0]; })[0]; if (tq[1] === 'date'){ var pd = parseDate(t.value); if (!pd){ toast('Skriv datumet som ÅÅ.MM.DD.'); render(true); return; } tre.date = pd; } else tre[tq[1]] = t.value; S.time.sort(function(a, b){ return a.date < b.date ? -1 : a.date > b.date ? 1 : 0; }); save(); render(true); return; }
   if (t.dataset.appr){ setAppr(ev, t.dataset.appr, t.value); return; }
   if (t.dataset.fact){ ev.lokal.facts[+t.dataset.fact][2] = t.value; logIt(ev.lokal, ev.lokal.facts[+t.dataset.fact][1] + ' ändrad'); save(); return; }
   if (t.dataset.pintext){ var d = findItem(ev, UI.drawing).it, p = d.pins.filter(function(x){ return x.id === t.dataset.pintext; })[0]; if (t.value.trim()){ p.text = t.value.trim(); delete p.edit; } else d.pins.splice(d.pins.indexOf(p), 1); save(); render(true); return; }
@@ -642,6 +689,7 @@ document.addEventListener('change', function(e){
   if (t.id === 'who'){ UI.who = t.value; render(true); return; }
   if (t.id === 'runstart'){ ev.runStart = t.value || '16:30'; save(); render(true); return; }
 });
+document.addEventListener('toggle', function(e){ if (e.target.dataset && e.target.dataset.tplk) UI.tplOpen[e.target.dataset.tplk] = e.target.open; }, true);
 document.addEventListener('input', function(e){
   if (e.target.hasAttribute('data-draft')) UI.draft = e.target.value;
   if (e.target.id === 'palq'){ UI.pal.q = e.target.value; UI.pal.i = 0; drawPal(); }
@@ -653,15 +701,25 @@ document.addEventListener('submit', function(e){
     var it = addItem(ev, f.dataset.add, title, f.dataset.phaseName ? {phase:f.dataset.phaseName} : null);
     if (f.dataset.add === 'uppgifter'){ render(true); var again = document.querySelector('[data-phase-name="' + f.dataset.phaseName + '"] input'); again && again.focus(); }
     else location.hash = href(ev, f.dataset.add, it.id);
+  } else if (f.dataset.addfact != null && f.hasAttribute('data-addfact')){
+    var lab = f.label.value.trim(); if (!lab) return;
+    var sista = -1; ev.lokal.facts.forEach(function(x, i){ if (x[0] === f.dataset.addfact) sista = i; });
+    ev.lokal.facts.splice(sista + 1, 0, [f.dataset.addfact, lab, '']); save(); render(true);
+    var nf = document.querySelector('[data-fact="' + (sista + 1) + '"]'); nf && nf.focus();
+  } else if (f.dataset.addtpl){
+    var tt = f.title.value.trim(); if (!tt) return;
+    TEMPLATES[f.dataset.addtpl].tasks.push([0, tt, 30, 'D']); save(); render(true);
   } else if (f.dataset.comment){
     var text = f.text.value.trim(); if (!text) return;
-    c.it.comments.push({who:me(), text:text, at:Date.now(), vis:kund() ? 'kund' : UI.vis}); UI.draft = ''; save(); render(true);
+    (c.it.comments = c.it.comments || []).push({who:me(), text:text, at:Date.now(), vis:kund() ? 'kund' : UI.vis}); UI.draft = ''; save(); render(true);
   } else if (f.id === 'timeform'){
     var h = +String(f.h.value).replace(',', '.'); if (!(h > 0)) return;
-    S.time.push({id:uid('t'), who:f.who.value, date:f.date.value, ev:f.ev.value, akt:f.akt.value, h:h, deb:f.ev.value !== '', note:f.note.value.trim()});
+    var td = parseDate(f.date.value); if (!td){ toast('Skriv datumet som ÅÅ.MM.DD.'); return; }
+    S.time.push({id:uid('t'), who:f.who.value, date:td, ev:f.ev.value, akt:f.akt.value, h:h, deb:f.ev.value !== '', note:f.note.value.trim()});
     S.time.sort(function(a, b){ return a.date < b.date ? -1 : a.date > b.date ? 1 : 0; }); save(); render(true); toast(hh(h) + ' h tillagda på ' + evName(f.ev.value) + '.');
   } else if (f.id === 'newform'){
-    var id = uid('e'), nev = newEvent(id, f.name.value.trim(), f.client.value.trim(), f.tpl.value, f.date.value, f.venue.value.trim(), +f.guests.value || 100);
+    var nd = parseDate(f.date.value); if (!nd){ toast('Skriv datumet som ÅÅ.MM.DD.'); return; }
+    var id = uid('e'), nev = newEvent(id, f.name.value.trim(), f.client.value.trim(), f.tpl.value, nd, f.venue.value.trim(), +f.guests.value || 100);
     S.events.push(nev); save(); $('#dlg').close(); location.hash = href(nev, 'uppgifter');
   }
 });
@@ -704,7 +762,7 @@ function runPal(i){
 }
 function newDialog(){
   $('#dlg').innerHTML = '<form id="newform"><h2>Nytt event</h2><label><span>Namn</span><input name="name" required placeholder="Sommarfest 2027"></label><label><span>Kund</span><input name="client" required></label>' +
-    '<div class="two"><label><span>Datum</span><input name="date" type="date" required value="' + iso(addDays(T0, 60)) + '"></label><label><span>Antal gäster</span><input name="guests" type="number" min="1" value="200" required></label></div>' +
+    '<div class="two"><label><span>Datum</span><input name="date" type="text" inputmode="numeric" placeholder="ÅÅ.MM.DD" maxlength="10" required value="' + fmt(iso(addDays(T0, 60))) + '"></label><label><span>Antal gäster</span><input name="guests" type="number" min="1" value="200" required></label></div>' +
     '<label><span>Lokal</span><input name="venue" placeholder="Kan fyllas i senare"></label><label><span>Mall</span><select name="tpl">' + Object.keys(TEMPLATES).map(function(k){ return '<option value="' + k + '">' + TEMPLATES[k].name + ', ' + TEMPLATES[k].tasks.length + ' uppgifter</option>'; }).join('') + '</select></label>' +
     '<div class="act"><button type="button" class="btn" data-act="close">Avbryt</button><button class="btn pri">Skapa event</button></div></form>';
   $('#dlg').showModal();

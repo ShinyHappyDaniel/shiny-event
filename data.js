@@ -5,8 +5,14 @@ function iso(d){ return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(
 function fromIso(s){ var p = String(s).split('-').map(Number); return new Date(p[0], p[1]-1, p[2]); }
 function addDays(d, n){ var x = new Date(d); x.setDate(x.getDate()+n); return x; }
 function diff(s){ return Math.round((fromIso(s) - T0) / DAY); }
-function fmt(s){ return s ? fromIso(s).toLocaleDateString('sv-SE', {day:'numeric', month:'short'}).replace('.', '') : ''; }
-function fmtLong(s){ return fromIso(s).toLocaleDateString('sv-SE', {weekday:'long', day:'numeric', month:'long', year:'numeric'}); }
+function fmt(s){ if (!s) return ''; var p = String(s).split('-'); return p[0].slice(2) + '.' + p[1] + '.' + p[2]; }
+// Tar emot 26.11.18, 261118, 2026-11-18 eller 26-11-18 och ger 2026-11-18. Ogiltigt datum ger null.
+function parseDate(v){
+  var m = String(v || '').trim().match(/^(\d{2}|\d{4})[.\-\/ ]?(\d{2})[.\-\/ ]?(\d{2})$/); if (!m) return null;
+  var y = m[1].length === 2 ? 2000 + (+m[1]) : +m[1], d = new Date(y, +m[2] - 1, +m[3]);
+  return d.getFullYear() === y && d.getMonth() === +m[2] - 1 && d.getDate() === +m[3] ? iso(d) : null;
+}
+function fmtLong(s){ return fromIso(s).toLocaleDateString('sv-SE', {weekday:'long'}) + ' ' + fmt(s); }
 function rel(s){ var n = diff(s); if (n === 0) return 'i dag'; if (n === 1) return 'i morgon'; if (n === -1) return 'i går'; return n > 0 ? 'om ' + n + ' d' : Math.abs(n) + ' d sen'; }
 function kr(n){ return Math.round(n || 0).toLocaleString('sv-SE') + ' kr'; }
 function esc(s){ return String(s == null ? '' : s).replace(/[&<>"']/g, function(c){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]; }); }
