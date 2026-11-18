@@ -99,6 +99,7 @@ function onRemote(ch){
   var prefs = {role:S.role, theme:S.theme, kundEv:S.kundEv};
   S = fromDocs(local); S.role = prefs.role; S.theme = prefs.theme; S.kundEv = prefs.kundEv;
   TEMPLATES = S.templates;
+  if (typeof histMark === 'function') histMark();
   if (dirty || SYNC.pending) queueSync();
   remoteRender();
 }
