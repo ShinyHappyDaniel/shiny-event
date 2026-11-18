@@ -33,12 +33,16 @@ var PERSON_FIELDS = [['role','Roll','text'],['tel','Telefon','text'],['mejl','Me
 var GROUPS = [['', ['oversikt']], ['Planering', ['uppgifter','schema','korschema']], ['Folk', ['personal','leverantorer','underhallning']], ['Plats', ['lokal','ritningar','teknik','fortaring']], ['Kreativt', ['moodboard']], ['Affär', ['budget','avtal','gaster']]];
 var KUND_MODS = ['oversikt','uppgifter','korschema','ritningar','moodboard','gaster'];
 
-var S, UI = {taskView:'lista', taskFilter:'alla', hideDone:false, shut:{}, who:'Alla', drawing:null, pinMode:false, vis:'intern', draft:'', live:null, pal:null, undo:null, week:0, tw:'Daniel', tplOpen:{}, focusNew:false};
+var S, UI = {taskView:'lista', taskFilter:'alla', hideDone:false, shut:{}, who:'Alla', drawing:null, pinMode:false, vis:'intern', draft:'', live:null, pal:null, undo:null, week:0, tw:'Daniel', tplOpen:{}, focusNew:false, pf:{q:'', ev:'', role:''}};
 function load(){ try { S = JSON.parse(localStorage.getItem(KEY)); } catch(e){} if (!S || S.v !== 1) S = seed(); if (!S.time) S.time = seedTime(); if (!S.templates) S.templates = JSON.parse(TEMPLATES0); TEMPLATES = S.templates; }
-function save(){ try { localStorage.setItem(KEY, JSON.stringify(S)); } catch(e){} }
+function save(){
+  if (REMOTE){ try { localStorage.setItem('se-prefs', JSON.stringify({role:S.role, theme:S.theme})); } catch(e){} queueSync(); return; }
+  try { localStorage.setItem(KEY, JSON.stringify(S)); } catch(e){}
+}
+function myName(){ return UI.me || 'Daniel'; }
 function $(s){ return document.querySelector(s); }
 function kund(){ return S.role === 'kund'; }
-function me(){ return kund() ? 'Kund' : 'Daniel'; }
+function me(){ return kund() ? 'Kund' : myName(); }
 function getEv(id){ return S.events.filter(function(e){ return e.id === id; })[0]; }
 function person(id){ return S.people.filter(function(p){ return p.id === id; })[0]; }
 function pname(id){ var p = person(id); return p ? p.title : 'Ej tillsatt'; }
@@ -122,15 +126,15 @@ function kundBanner(ev){ return kund() ? '<div class="banner"><span><b>Kundvy.</
 function inbox(){
   var out = [];
   S.events.forEach(function(ev){
-    for (var m in ev.items) ev.items[m].forEach(function(it){ (it.comments || []).forEach(function(c){ if (c.who !== 'Daniel') out.push({at:c.at, kind:'Kommentar', text:c.who + ': ' + c.text, ev:ev, go:href(ev, m, it.id), on:it.title}); }); });
-    (ev.lokal.comments || []).forEach(function(c){ if (c.who !== 'Daniel') out.push({at:c.at, kind:'Kommentar', text:c.who + ': ' + c.text, ev:ev, go:href(ev, 'lokal', 'lokal'), on:'Lokal'}); });
+    for (var m in ev.items) ev.items[m].forEach(function(it){ (it.comments || []).forEach(function(c){ if (c.who !== myName()) out.push({at:c.at, kind:'Kommentar', text:c.who + ': ' + c.text, ev:ev, go:href(ev, m, it.id), on:it.title}); }); });
+    (ev.lokal.comments || []).forEach(function(c){ if (c.who !== myName()) out.push({at:c.at, kind:'Kommentar', text:c.who + ': ' + c.text, ev:ev, go:href(ev, 'lokal', 'lokal'), on:'Lokal'}); });
     var bad = conflicts(ev);
     ev.items.personal.forEach(function(s){
       if (s.status === 'Nekad') out.push({at:Date.now() - DAY, kind:'Personal', tone:'bad', text:pname(s.person) + ' tackade nej till ' + s.role + '.', ev:ev, go:href(ev, 'personal', s.id), on:s.title});
       else if (bad[s.id]) out.push({at:Date.now() - DAY / 2, kind:'Krock', tone:'bad', text:pname(s.person) + ' är dubbelbokad ' + s.start + ' till ' + s.end + '.', ev:ev, go:href(ev, 'personal', s.id), on:s.title});
     });
     ev.items.avtal.forEach(function(a){ var w = watch(a); if (w) out.push({at:Date.now() - 2 * DAY, kind:'Avtal', tone:w[0], text:w[1] + ': ' + a.title + '.', ev:ev, go:href(ev, 'avtal', a.id), on:a.motpart}); });
-    lateTasks(ev).forEach(function(t){ if (t.owner === 'Daniel') out.push({at:fromIso(t.due).getTime(), kind:'Försenat', tone:'bad', text:t.title + ', skulle varit klart ' + fmt(t.due) + '.', ev:ev, go:href(ev, 'uppgifter', t.id), on:'Uppgift'}); });
+    lateTasks(ev).forEach(function(t){ if (t.owner === myName()) out.push({at:fromIso(t.due).getTime(), kind:'Försenat', tone:'bad', text:t.title + ', skulle varit klart ' + fmt(t.due) + '.', ev:ev, go:href(ev, 'uppgifter', t.id), on:'Uppgift'}); });
   });
   return out.sort(function(a, b){ return b.at - a.at; });
 }
@@ -150,14 +154,14 @@ function renderSide(){
       });
     });
   }
-  h += '</nav><div class="foot">Prototyp 2, exempeldata.<br><button data-act="reset">Återställ demon</button></div>';
+  h += '</nav><div class="foot">' + (REMOTE ? 'Inloggad som ' + esc(myName()) + '.<br><button data-act="logout">Logga ut</button>' : 'Demoläge, sparas bara i den här webbläsaren.<br><button data-act="reset">Återställ demon</button>') + '</div>';
   $('#side').innerHTML = h;
 }
 function renderTop(){
   var r = route(), ev = r.view === 'event' && getEv(r.ev), names = {hem:'Alla event', inkorg:'Inkorg', personal:'Personalregister', mallar:'Mallar', tid:'Tidrapport'};
   var c = ev ? '<a href="#/">Event</a><span>/</span><a href="' + href(ev, 'oversikt') + '">' + esc(ev.name) + '</a><span>/</span><b>' + MODS[r.mod].name + '</b>' : '<b>' + (names[r.view] || '') + '</b>';
   $('#top').innerHTML = '<button class="btn quiet burger" data-act="nav" aria-label="Meny">Meny</button><nav class="crumbs" aria-label="Brödsmulor">' + c + '</nav><div class="sp"></div>' +
-    '<span class="saved">Sparas automatiskt</span>' +
+    '<span class="saved" id="savest" role="status">' + (REMOTE ? (SYNC.state || 'Sparat') : 'Sparas i webbläsaren') + '</span>' +
     '<button class="btn search" data-act="pal"><em style="font-style:normal">Sök eller hoppa till</em><kbd>⌘K</kbd></button>' +
     '<button class="btn quiet" data-act="theme" aria-label="Byt ljust och mörkt läge">' + (document.documentElement.dataset.theme === 'dark' ? 'Ljust' : 'Mörkt') + '</button>' +
     '<div class="seg" role="group" aria-label="Visa som"><button data-role="byra" class="' + (kund() ? '' : 'on') + '">Byrå</button><button data-role="kund" class="' + (kund() ? 'on' : '') + '">Kund</button></div>';
@@ -177,7 +181,7 @@ function viewHome(){
       '<div class="x">' + bar(p, 'wide') + '<span class="faint num" style="font-size:12px">' + p + ' % klart</span></div><div>' + st(health(ev)) + '</div></a>';
   }).join('');
   return page(kund() ? 'Era event' : 'Alla event', evs.length + ' pågående', kund() ? '' : '<button class="btn pri" data-act="new">Nytt event</button>',
-    (kund() && evs[0] ? kundBanner(evs[0]) : '') + '<div class="card">' + rows + '</div>' +
+    (kund() && evs[0] ? kundBanner(evs[0]) : '') + (evs.length ? '<div class="card">' + rows + '</div>' : empty('Inga event än', 'Skapa ert första event. Vill du bara prova kan du läsa in exempeldata och ta bort den sen.', '<button class="btn pri" data-act="new">Nytt event</button> <button class="btn" data-act="demo">Läs in exempeldata</button>') + '<div style="height:22px"></div>') +
     '<div class="card"><header><h2>' + (kund() ? 'Det här väntar på er' : 'Att göra nu, alla event') + '</h2><span class="faint">' + all.length + ' öppna</span></header>' +
     (all.slice(0, 8).map(function(x){ return taskRow(x[0], x[1], true); }).join('') || empty('Inget öppet', 'Allt är avbockat.')) + '</div>');
 }
@@ -189,15 +193,35 @@ function viewInbox(){
     }).join('') || empty('Tomt', 'Inget väntar på dig.')) + '</div>');
 }
 function viewPeople(){
-  var r = route();
-  var rows = S.people.map(function(p){
-    var n = 0, krock = false;
-    S.events.forEach(function(ev){ var bad = conflicts(ev); ev.items.personal.forEach(function(s){ if (s.person === p.id && s.status !== 'Nekad'){ n++; if (bad[s.id]) krock = true; } }); });
-    var w = p.avtal ? (p.avtalslut && diff(p.avtalslut) <= 30 ? st('Löper ut ' + rel(p.avtalslut), 'warn') : st('Signerat')) : st('Saknas', 'bad');
-    return '<tr class="rowlink' + (r.item === p.id ? ' sel' : '') + '" data-go="#/personal/' + p.id + '"><td class="t">' + esc(p.title) + '</td><td>' + esc(p.role) + '</td><td class="num">' + esc(p.tel) + '</td><td>' + esc(p.ort) + '</td><td>' + esc(p.cert) + '</td><td class="r">' + n + (krock ? ' ' + st('Krock') : '') + '</td><td>' + w + '</td></tr>';
+  var r = route(), F = UI.pf, q = F.q.trim().toLowerCase(), roles = [];
+  S.people.forEach(function(p){ if (p.role && roles.indexOf(p.role) < 0) roles.push(p.role); }); roles.sort();
+  var list = S.people.map(function(p){
+    var evs = [], n = 0, krock = false;
+    S.events.forEach(function(ev){
+      var bad = conflicts(ev), mine = ev.items.personal.filter(function(s){ return s.person === p.id && s.status !== 'Nekad'; });
+      if (!mine.length) return;
+      n += mine.length; if (mine.some(function(s){ return bad[s.id]; })) krock = true;
+      evs.push({ev:ev, n:mine.length, ok:mine.every(function(s){ return s.status === 'Bekräftad'; })});
+    });
+    return {p:p, evs:evs, n:n, krock:krock};
+  }).filter(function(x){
+    if (F.ev === '-' && x.evs.length) return false;
+    if (F.ev && F.ev !== '-' && !x.evs.some(function(e){ return e.ev.id === F.ev; })) return false;
+    if (F.role && x.p.role !== F.role) return false;
+    if (q && (x.p.title + ' ' + x.p.role + ' ' + x.p.ort + ' ' + x.p.cert + ' ' + x.p.tel + ' ' + x.p.mejl + ' ' + x.evs.map(function(e){ return e.ev.name; }).join(' ')).toLowerCase().indexOf(q) < 0) return false;
+    return true;
+  });
+  var tools = '<div class="tools"><input id="pq" class="fi" style="width:220px" placeholder="Sök namn, roll, ort, certifikat" value="' + esc(F.q) + '" aria-label="Sök i personalregistret">' +
+    '<select id="pfev" class="fi" aria-label="Filtrera på event"><option value="">Alla event</option>' + S.events.map(function(e){ return '<option value="' + e.id + '"' + (F.ev === e.id ? ' selected' : '') + '>' + esc(e.name) + '</option>'; }).join('') + '<option value="-"' + (F.ev === '-' ? ' selected' : '') + '>Inte anlitad just nu</option></select>' +
+    '<select id="pfrole" class="fi" aria-label="Filtrera på roll"><option value="">Alla roller</option>' + roles.map(function(x){ return '<option' + (F.role === x ? ' selected' : '') + '>' + esc(x) + '</option>'; }).join('') + '</select>' +
+    (F.q || F.ev || F.role ? '<button class="btn quiet" data-act="pfclear">Rensa filter</button>' : '') + '<div class="sp"></div><span class="faint num">' + list.length + ' av ' + S.people.length + '</span></div>';
+  var rows = list.map(function(x){
+    var p = x.p, w = p.avtal ? (p.avtalslut && diff(p.avtalslut) <= 30 ? st('Löper ut ' + rel(p.avtalslut), 'warn') : st('Signerat')) : st('Saknas', 'bad');
+    var evs = x.evs.map(function(e){ return '<a class="tag evtag" href="' + href(e.ev, 'personal') + '" title="' + e.n + ' pass, ' + (e.ok ? 'bekräftad' : 'inte bekräftad än') + '">' + esc(e.ev.name) + (e.n > 1 ? ' (' + e.n + ')' : '') + (e.ok ? '' : ' ?') + '</a>'; }).join(' ') || '<span class="faint">Ingen</span>';
+    return '<tr class="rowlink' + (r.item === p.id ? ' sel' : '') + '" data-go="#/personal/' + p.id + '"><td class="t">' + esc(p.title) + '</td><td>' + esc(p.role) + '</td><td style="white-space:normal;min-width:220px">' + evs + '</td><td class="r">' + x.n + (x.krock ? ' ' + st('Krock') : '') + '</td><td class="num">' + esc(p.tel) + '</td><td>' + esc(p.ort) + '</td><td>' + esc(p.cert) + '</td><td>' + w + '</td></tr>';
   }).join('');
-  return page('Personalregister', 'Gemensamt för alla event. Personalen loggar inte in, de får en egen länk per event.', '<button class="btn pri" data-act="addperson">Lägg till person</button>',
-    '<div class="tw"><table><thead><tr><th>Namn</th><th>Roll</th><th>Telefon</th><th>Ort</th><th>Certifikat</th><th class="r">Kommande pass</th><th>Avtal</th></tr></thead><tbody>' + rows + '</tbody></table></div>');
+  return page('Personalregister', 'Gemensamt för alla event. Här ser du vilka event var och en är anlitad för. Ett frågetecken betyder att passet inte är bekräftat än.', '<button class="btn pri" data-act="addperson">Lägg till person</button>',
+    tools + (S.people.length ? (rows ? '<div class="tw"><table><thead><tr><th>Namn</th><th>Roll</th><th>Anlitad för</th><th class="r">Pass</th><th>Telefon</th><th>Ort</th><th>Certifikat</th><th>Avtal</th></tr></thead><tbody>' + rows + '</tbody></table></div>' : empty('Ingen matchar filtret', 'Ändra eller rensa filtret.')) : empty('Inga personer än', 'Lägg till värdar, tekniker och andra ni brukar anlita.')));
 }
 function viewTemplates(){
   var keys = Object.keys(TEMPLATES);
@@ -582,7 +606,7 @@ function addItem(ev, mod, title, extra){
     personal:{person:S.people[0].id, role:title, call:'15:45', start:'16:00', end:'22:00', plats:'', status:'Tillfrågad', arvode:S.people[0].arvode, utskick:'Inte skickat'}, leverantorer:{kategori:'', kontakt:'', tel:'', status:'Förfrågan', belopp:0, frist:ev.date, last:''},
     underhallning:{status:'Option', gage:0, speltid:'', set:0, soundcheck:'', inlast:'', rider:'', loge:'', kontakt:''}, teknik:{antal:1, kategori:'Ljud', lev:'', strom:'', 'in':'', status:'Beställd'}, fortaring:{tid:'18:00', antal:ev.guests, garanti:0, satt:'', plats:'', status:'Utkast'},
     budget:{budget:0, utfall:0, status:'Preliminär'}, ritningar:{version:'v1', kind:'tom', status:'Utkast', pins:[]}, avtal:{motpart:'', typ:'Leverantör', status:'Utkast', start:iso(T0), slut:ev.date, uppsagning:'', pdf:''}, moodboard:{typ:'Anteckning', c1:''}}[mod] || {};
-  var it = Object.assign({id:uid('n'), title:title, comments:[], log:[]}, d, extra || {});
+  var it = Object.assign({id:uid('n'), title:title, comments:[], log:[], _p:nextPos(ev.items[mod])}, d, extra || {});
   if (mod === 'personal') it.title = pname(it.person) + ', ' + it.role;
   logIt(it, 'Skapad'); ev.items[mod].push(it); save(); return it;
 }
@@ -618,7 +642,9 @@ function act(name, el, c){
     case 'theme': S.theme = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark'; save(); render(true); break;
     case 'pal': openPal(); break;
     case 'print': window.print(); break;
-    case 'reset': if (confirm('Återställa demon till exempeldatan?')){ TEMPLATES = JSON.parse(TEMPLATES0); S = seed(); S.templates = TEMPLATES; save(); location.hash = '#/'; render(false); } break;
+    case 'logout': flushSync().then(function(){ return REMOTE.signOut(); }).then(function(){ location.hash = '#/'; location.reload(); }); break;
+    case 'demo': var dm = seed(); dm.events.forEach(function(x){ if (!getEv(x.id)) S.events.push(x); }); dm.people.forEach(function(x){ if (!person(x.id)) S.people.push(x); }); if (!S.time.length) S.time = dm.time; save(); render(false); toast('Exempeldata inläst.'); break;
+    case 'reset': if (REMOTE) break; if (confirm('Återställa demon till exempeldatan?')){ TEMPLATES = JSON.parse(TEMPLATES0); S = seed(); S.templates = TEMPLATES; save(); location.hash = '#/'; render(false); } break;
     case 'new': newDialog(); break;
     case 'close': $('#dlg').close(); break;
     case 'upload': toast('Uppladdning finns i riktiga appen. Här är det exempelfiler.'); break;
@@ -632,7 +658,7 @@ function act(name, el, c){
     case 'addcue': UI.focusNew = true; location.hash = href(ev, 'korschema', addItem(ev, 'korschema', 'Ny punkt').id); break;
     case 'addfirst': UI.focusNew = true; location.hash = href(ev, el.dataset.mod, addItem(ev, el.dataset.mod, NY[el.dataset.mod]).id); break;
     case 'lokalmall': ev.lokal.facts = [['Grund','Adress',ev.address],['Grund','Tillträde',''],['Grund','Sluttid',''],['Kapacitet','Sittande',''],['Kapacitet','Stående',''],['Kapacitet','Takhöjd',''],['Teknik och el','El',''],['Teknik och el','Nät',''],['Logistik','Lastkaj',''],['Logistik','Parkering',''],['Regler','Ljudgräns',''],['Kontakt','Platsansvarig','']]; save(); render(true); break;
-    case 'cueup': case 'cuedown': var list = ev.items.korschema, i = list.indexOf(it), j = i + (name === 'cueup' ? -1 : 1); if (j >= 0 && j < list.length){ list.splice(i, 1); list.splice(j, 0, it); save(); render(true); } break;
+    case 'cueup': case 'cuedown': var list = ev.items.korschema, i = list.indexOf(it), j = i + (name === 'cueup' ? -1 : 1); if (j >= 0 && j < list.length){ ensurePos(list); var other = list[j], tmpP = it._p; it._p = other._p; other._p = tmpP; list.splice(i, 1); list.splice(j, 0, it); save(); render(true); } break;
     case 'del':
       if (c.imod === '_event' && !confirm('Ta bort hela eventet ' + it.name + '?')) break;
       var arr = c.imod === '_event' ? S.events : c.imod === '_person' ? S.people : ev.items[c.imod], idx = arr.indexOf(it);
@@ -649,6 +675,7 @@ function act(name, el, c){
     case 'tpldeltask': TEMPLATES[el.dataset.k].tasks.splice(+el.dataset.i, 1); save(); render(true); break;
     case 'week': UI.week = +el.dataset.d ? UI.week + (+el.dataset.d) : 0; render(true); break;
     case 'tdel': var te = S.time.filter(function(x){ return x.id === el.dataset.id; })[0], ti = S.time.indexOf(te); S.time.splice(ti, 1); save(); render(true); toast(hh(te.h) + ' h borttagna.', function(){ S.time.splice(ti, 0, te); save(); render(true); }); break;
+    case 'pfclear': UI.pf = {q:'', ev:'', role:''}; render(true); break;
     case 'undo': UI.undo && UI.undo(); $('#toast').hidden = true; break;
     case 'livestart': UI.live = {t:tmin(ev.runStart) - 3, paused:false, timer:setInterval(function(){ var L = UI.live; if (!L) return; if (!L.paused){ L.t++; render(true); } }, 1000)}; render(true); break;
     case 'livepause': UI.live.paused = !UI.live.paused; render(true); break;
@@ -685,6 +712,8 @@ document.addEventListener('change', function(e){
   if (t.dataset.fact){ ev.lokal.facts[+t.dataset.fact][2] = t.value; logIt(ev.lokal, ev.lokal.facts[+t.dataset.fact][1] + ' ändrad'); save(); return; }
   if (t.dataset.pintext){ var d = findItem(ev, UI.drawing).it, p = d.pins.filter(function(x){ return x.id === t.dataset.pintext; })[0]; if (t.value.trim()){ p.text = t.value.trim(); delete p.edit; } else d.pins.splice(d.pins.indexOf(p), 1); save(); render(true); return; }
   if (t.dataset.pindone){ var d2 = findItem(ev, UI.drawing).it; d2.pins.filter(function(x){ return x.id === t.dataset.pindone; })[0].done = t.checked; save(); render(true); return; }
+  if (t.id === 'pfev'){ UI.pf.ev = t.value; render(true); return; }
+  if (t.id === 'pfrole'){ UI.pf.role = t.value; render(true); return; }
   if (t.id === 'hidedone'){ UI.hideDone = t.checked; render(true); return; }
   if (t.id === 'who'){ UI.who = t.value; render(true); return; }
   if (t.id === 'runstart'){ ev.runStart = t.value || '16:30'; save(); render(true); return; }
@@ -692,6 +721,7 @@ document.addEventListener('change', function(e){
 document.addEventListener('toggle', function(e){ if (e.target.dataset && e.target.dataset.tplk) UI.tplOpen[e.target.dataset.tplk] = e.target.open; }, true);
 document.addEventListener('input', function(e){
   if (e.target.hasAttribute('data-draft')) UI.draft = e.target.value;
+  if (e.target.id === 'pq'){ UI.pf.q = e.target.value; var caret = e.target.selectionStart; render(true); var pq = $('#pq'); if (pq){ pq.focus(); pq.setSelectionRange(caret, caret); } }
   if (e.target.id === 'palq'){ UI.pal.q = e.target.value; UI.pal.i = 0; drawPal(); }
 });
 document.addEventListener('submit', function(e){
@@ -717,6 +747,9 @@ document.addEventListener('submit', function(e){
     var td = parseDate(f.date.value); if (!td){ toast('Skriv datumet som ÅÅ.MM.DD.'); return; }
     S.time.push({id:uid('t'), who:f.who.value, date:td, ev:f.ev.value, akt:f.akt.value, h:h, deb:f.ev.value !== '', note:f.note.value.trim()});
     S.time.sort(function(a, b){ return a.date < b.date ? -1 : a.date > b.date ? 1 : 0; }); save(); render(true); toast(hh(h) + ' h tillagda på ' + evName(f.ev.value) + '.');
+  } else if (f.id === 'loginform'){
+    var lb = f.querySelector('button'), lm = document.getElementById('loginmsg'); lb.disabled = true; lm.textContent = 'Loggar in';
+    REMOTE.signIn(f.email.value, f.password.value).then(boot).catch(function(err){ lb.disabled = false; lm.textContent = err.message || 'Kunde inte logga in.'; });
   } else if (f.id === 'newform'){
     var nd = parseDate(f.date.value); if (!nd){ toast('Skriv datumet som ÅÅ.MM.DD.'); return; }
     var id = uid('e'), nev = newEvent(id, f.name.value.trim(), f.client.value.trim(), f.tpl.value, nd, f.venue.value.trim(), +f.guests.value || 100);
@@ -768,6 +801,51 @@ function newDialog(){
   $('#dlg').showModal();
 }
 
-load();
-(function(){ var r = route(); lastPath = r.view + '/' + (r.ev || '') + '/' + (r.mod || ''); })();
-render(false);
+/* ---------- Start ---------- */
+function typing(){ var a = document.activeElement; return !!(a && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName) && a.type !== 'checkbox' && a.closest('#main,#panel,#dlg')); }
+function remoteRender(){ if (typing() || UI.pal){ UI.pendingRender = true; return; } UI.pendingRender = false; render(true); }
+document.addEventListener('focusout', function(){ if (UI.pendingRender) setTimeout(function(){ if (UI.pendingRender && !typing()) remoteRender(); }, 60); });
+window.addEventListener('beforeunload', function(e){ if (REMOTE && SYNC.pending){ flushSync(); e.preventDefault(); e.returnValue = ''; } });
+function start(){ var r = route(); lastPath = r.view + '/' + (r.ev || '') + '/' + (r.mod || ''); render(false); }
+function showLogin(msg, loggedIn){
+  S = {v:1, role:'byra', theme:'', events:[], people:[], time:[], templates:{}};
+  document.documentElement.dataset.theme = window.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+  document.body.classList.add('bare'); $('#panel').hidden = true;
+  $('#main').innerHTML = '<form id="loginform" class="login"><img src="assets/shp-star-' + (document.documentElement.dataset.theme === 'dark' ? 'white' : 'pink') + '.svg" alt="" width="36" height="36"><h1>Shiny Event</h1>' +
+    (loggedIn ? '<p id="loginmsg" role="alert">' + esc(msg) + '</p><button type="button" class="btn" data-act="logout">Logga ut</button>' :
+    '<label><span>E-post</span><input name="email" type="email" autocomplete="username" required></label><label><span>Lösenord</span><input name="password" type="password" autocomplete="current-password" required></label>' +
+    '<button class="btn pri">Logga in</button><p id="loginmsg" role="alert">' + esc(msg || '') + '</p><p class="faint">Samma konto som i CRM:et.</p>') + '</form>';
+}
+function startRemote(ses){
+  UI.me = ses.name; if (ses.name === 'Daniel' || ses.name === 'Lasse') UI.tw = ses.name;
+  return REMOTE.loadAll().then(function(rows){
+    var map = {}; SNAP = {};
+    rows.forEach(function(r){ var d = normDoc(r); map[d.kind + '|' + d.id] = d; SNAP[d.kind + '|' + d.id] = canon(d); });
+    S = fromDocs(map);
+    try { var pf = JSON.parse(localStorage.getItem('se-prefs')) || {}; S.role = pf.role || 'byra'; S.theme = pf.theme || ''; } catch(e){ S.role = 'byra'; S.theme = ''; }
+    var first = !Object.keys(S.templates).length;
+    if (first) S.templates = JSON.parse(TEMPLATES0);
+    TEMPLATES = S.templates;
+    REMOTE.subscribe(onRemote);
+    document.body.classList.remove('bare');
+    start();
+    if (first) queueSync(50);
+  });
+}
+function boot(){
+  var fake = /[?&]fake=1/.test(location.search) && /^(localhost|127\.0\.0\.1)$/.test(location.hostname);
+  if (!window.SE_CONFIG && !fake){ load(); start(); return Promise.resolve(); }
+  $('#main').innerHTML = '<p class="muted" style="padding:40px">Laddar</p>';
+  return (REMOTE ? Promise.resolve(REMOTE) : (fake ? fakeBackend() : supabaseBackend(window.SE_CONFIG))).then(function(b){
+    REMOTE = b; return REMOTE.session();
+  }).then(function(ses){
+    if (!ses){ showLogin(); return; }
+    if (ses.notStaff){ showLogin('Kontot ' + ses.email + ' har ingen behörighet här än.', true); return; }
+    return startRemote(ses);
+  }).catch(function(err){
+    S = S || {v:1, role:'byra', events:[], people:[], time:[], templates:{}};
+    document.body.classList.add('bare');
+    $('#main').innerHTML = '<div class="login"><h1>Shiny Event</h1><p role="alert">Kunde inte ansluta till databasen.</p><p class="faint">' + esc(err && err.message || err) + '</p><button class="btn" onclick="location.reload()">Försök igen</button></div>';
+  });
+}
+boot();
