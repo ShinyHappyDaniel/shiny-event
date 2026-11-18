@@ -2,11 +2,17 @@
 <html lang="sv">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#171716" media="(prefers-color-scheme: dark)">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Shiny Event">
+<link rel="manifest" href="manifest.json">
 <meta name="robots" content="noindex">
 <title>Shiny Event</title>
 <link rel="icon" href="assets/shp-star-pink.svg">
-<link rel="stylesheet" href="app.css?v=4">
+<link rel="stylesheet" href="app.css?v=5">
 </head>
 <body>
 <div class="shell">
@@ -18,12 +24,13 @@
   </div>
   <aside class="panel" id="panel" hidden></aside>
 </div>
+<nav class="tabbar" id="tabbar" aria-label="Snabbmeny"></nav>
 <div class="pal" id="pal" hidden></div>
 <div class="toast" id="toast" hidden></div>
 <dialog id="dlg"></dialog>
-<script src="config.js?v=4"></script>
-<script src="data.js?v=4"></script>
-<script src="sync.js?v=4"></script>
-<script src="app.js?v=4"></script>
+<script src="config.js?v=5"></script>
+<script src="data.js?v=5"></script>
+<script src="sync.js?v=5"></script>
+<script src="app.js?v=5"></script>
 </body>
 </html>

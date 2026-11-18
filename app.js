@@ -154,15 +154,33 @@ function renderSide(){
       });
     });
   }
-  h += '</nav><div class="foot">' + (REMOTE ? 'Inloggad som ' + esc(myName()) + '.<br><button data-act="logout">Logga ut</button>' : 'Demoläge, sparas bara i den här webbläsaren.<br><button data-act="reset">Återställ demon</button>') + '</div>';
+  h += '</nav><div class="mobonly"><span class="faint" style="font-size:12px">Visa som</span><div class="seg" role="group" aria-label="Visa som"><button data-role="byra" class="' + (kund() ? '' : 'on') + '">Byrå</button><button data-role="kund" class="' + (kund() ? 'on' : '') + '">Kund</button></div><button class="btn" data-act="theme">Byt till ' + (document.documentElement.dataset.theme === 'dark' ? 'ljust' : 'mörkt') + ' läge</button></div><div class="foot">' + (REMOTE ? 'Inloggad som ' + esc(myName()) + '.<br><button data-act="logout">Logga ut</button>' : 'Demoläge, sparas bara i den här webbläsaren.<br><button data-act="reset">Återställ demon</button>') + '</div>';
   $('#side').innerHTML = h;
+}
+var ICON = {
+  ev:'<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="5" width="16" height="15" rx="2"/><path d="M4 10h16M9 3v4M15 3v4"/></svg>',
+  inbox:'<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 13l2.5-7h11L20 13v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1z"/><path d="M4 13h5a3 3 0 0 0 6 0h5"/></svg>',
+  folk:'<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="8" r="3"/><path d="M3.5 19a5.5 5.5 0 0 1 11 0M16 5.5a3 3 0 0 1 0 5.5M17 14.5a5 5 0 0 1 3.5 4.5"/></svg>',
+  tid:'<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8"/><path d="M12 8v4l3 2"/></svg>',
+  mer:'<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg>'
+};
+function renderTabbar(){
+  var r = route(), onEv = r.view === 'hem' || r.view === 'event', n = kund() ? 0 : inbox().length;
+  function a(hash, name, icon, on, badge){ return '<a href="' + hash + '"' + (on ? ' class="on" aria-current="page"' : '') + '>' + ICON[icon] + '<span>' + name + '</span>' + (badge ? '<span class="badge">' + badge + '</span>' : '') + '</a>'; }
+  $('#tabbar').innerHTML = a('#/', 'Event', 'ev', onEv) + (kund() ? '' : a('#/inkorg', 'Inkorg', 'inbox', r.view === 'inkorg', n) + a('#/personal', 'Personal', 'folk', r.view === 'personal') + a('#/tid', 'Tid', 'tid', r.view === 'tid')) +
+    '<button data-act="nav" aria-label="Öppna hela menyn">' + ICON.mer + '<span>Mer</span></button>';
+}
+function modStrip(ev, mod){
+  var h = '';
+  GROUPS.forEach(function(g){ g[1].forEach(function(m){ if (!kund() || KUND_MODS.indexOf(m) >= 0) h += '<a href="' + href(ev, m) + '"' + (m === mod ? ' class="on" aria-current="page"' : '') + '>' + MODS[m].name + '</a>'; }); });
+  return '<nav class="modstrip" aria-label="Eventets delar">' + h + '</nav>';
 }
 function renderTop(){
   var r = route(), ev = r.view === 'event' && getEv(r.ev), names = {hem:'Alla event', inkorg:'Inkorg', personal:'Personalregister', mallar:'Mallar', tid:'Tidrapport'};
   var c = ev ? '<a href="#/">Event</a><span>/</span><a href="' + href(ev, 'oversikt') + '">' + esc(ev.name) + '</a><span>/</span><b>' + MODS[r.mod].name + '</b>' : '<b>' + (names[r.view] || '') + '</b>';
   $('#top').innerHTML = '<button class="btn quiet burger" data-act="nav" aria-label="Meny">Meny</button><nav class="crumbs" aria-label="Brödsmulor">' + c + '</nav><div class="sp"></div>' +
     '<span class="saved" id="savest" role="status">' + (REMOTE ? (SYNC.state || 'Sparat') : 'Sparas i webbläsaren') + '</span>' +
-    '<button class="btn search" data-act="pal"><em style="font-style:normal">Sök eller hoppa till</em><kbd>⌘K</kbd></button>' +
+    '<button class="btn search" data-act="pal" aria-label="Sök eller hoppa till"><em style="font-style:normal">Sök eller hoppa till</em><kbd>⌘K</kbd><span class="m">Sök</span></button>' +
     '<button class="btn quiet" data-act="theme" aria-label="Byt ljust och mörkt läge">' + (document.documentElement.dataset.theme === 'dark' ? 'Ljust' : 'Mörkt') + '</button>' +
     '<div class="seg" role="group" aria-label="Visa som"><button data-role="byra" class="' + (kund() ? '' : 'on') + '">Byrå</button><button data-role="kund" class="' + (kund() ? 'on' : '') + '">Kund</button></div>';
 }
@@ -218,7 +236,7 @@ function viewPeople(){
   var rows = list.map(function(x){
     var p = x.p, w = p.avtal ? (p.avtalslut && diff(p.avtalslut) <= 30 ? st('Löper ut ' + rel(p.avtalslut), 'warn') : st('Signerat')) : st('Saknas', 'bad');
     var evs = x.evs.map(function(e){ return '<a class="tag evtag" href="' + href(e.ev, 'personal') + '" title="' + e.n + ' pass, ' + (e.ok ? 'bekräftad' : 'inte bekräftad än') + '">' + esc(e.ev.name) + (e.n > 1 ? ' (' + e.n + ')' : '') + (e.ok ? '' : ' ?') + '</a>'; }).join(' ') || '<span class="faint">Ingen</span>';
-    return '<tr class="rowlink' + (r.item === p.id ? ' sel' : '') + '" data-go="#/personal/' + p.id + '"><td class="t">' + esc(p.title) + '</td><td>' + esc(p.role) + '</td><td style="white-space:normal;min-width:220px">' + evs + '</td><td class="r">' + x.n + (x.krock ? ' ' + st('Krock') : '') + '</td><td class="num">' + esc(p.tel) + '</td><td>' + esc(p.ort) + '</td><td>' + esc(p.cert) + '</td><td>' + w + '</td></tr>';
+    return '<tr class="rowlink' + (r.item === p.id ? ' sel' : '') + '" data-go="#/personal/' + p.id + '"><td class="t">' + esc(p.title) + '</td><td data-label="Roll">' + esc(p.role) + '</td><td class="wide" data-label="Anlitad för" style="white-space:normal;min-width:220px">' + evs + '</td><td class="r" data-label="Pass">' + x.n + (x.krock ? ' ' + st('Krock') : '') + '</td><td class="num" data-label="Telefon">' + (p.tel ? '<a href="tel:' + esc(p.tel.replace(/[^0-9+]/g, '')) + '">' + esc(p.tel) + '</a>' : '') + '</td><td data-label="Ort">' + esc(p.ort) + '</td><td data-label="Certifikat">' + esc(p.cert) + '</td><td data-label="Avtal">' + w + '</td></tr>';
   }).join('');
   return page('Personalregister', 'Gemensamt för alla event. Här ser du vilka event var och en är anlitad för. Ett frågetecken betyder att passet inte är bekräftat än.', '<button class="btn pri" data-act="addperson">Lägg till person</button>',
     tools + (S.people.length ? (rows ? '<div class="tw"><table><thead><tr><th>Namn</th><th>Roll</th><th>Anlitad för</th><th class="r">Pass</th><th>Telefon</th><th>Ort</th><th>Certifikat</th><th>Avtal</th></tr></thead><tbody>' + rows + '</tbody></table></div>' : empty('Ingen matchar filtret', 'Ändra eller rensa filtret.')) : empty('Inga personer än', 'Lägg till värdar, tekniker och andra ni brukar anlita.')));
@@ -272,11 +290,11 @@ function viewTime(){
   var rows = days.map(function(ds){
     var dl = list.filter(function(t){ return t.date === ds; }); if (!dl.length) return '';
     return '<tr class="sum"><td colspan="6">' + fmtLong(ds) + '</td><td class="r">' + hh(sum(dl)) + ' h</td><td></td></tr>' + dl.map(function(t){
-      return '<tr><td><input type="text" inputmode="numeric" placeholder="ÅÅ.MM.DD" maxlength="10" class="inl num" style="width:86px" data-tf="' + t.id + '|date" value="' + fmt(t.date) + '" aria-label="Datum"></td><td><select class="inl" data-tf="' + t.id + '|who" aria-label="Vem">' + opts(['Daniel', 'Lasse'], t.who) + '</select></td>' +
-        '<td><select class="inl" data-tf="' + t.id + '|ev" aria-label="Event">' + S.events.map(function(e){ return '<option value="' + e.id + '"' + (e.id === t.ev ? ' selected' : '') + '>' + esc(e.name) + '</option>'; }).join('') + '<option value=""' + (t.ev ? '' : ' selected') + '>Internt</option></select></td>' +
-        '<td><select class="inl" data-tf="' + t.id + '|akt" aria-label="Aktivitet">' + opts(AKT, t.akt) + '</select></td><td><input class="inl" style="min-width:160px" data-tf="' + t.id + '|note" value="' + esc(t.note) + '" placeholder="Anteckning" aria-label="Anteckning"></td>' +
-        '<td><input type="checkbox" class="cb" data-tdeb="' + t.id + '"' + (t.deb ? ' checked' : '') + ' aria-label="Debiterbar"></td>' +
-        '<td class="r"><input type="number" class="inl num" style="width:72px;text-align:right" min="0" max="24" step="0.25" data-th="' + t.id + '" value="' + t.h + '" aria-label="Timmar"></td>' +
+      return '<tr><td data-label="Datum"><input type="text" inputmode="numeric" placeholder="ÅÅ.MM.DD" maxlength="10" class="inl num" style="width:86px" data-tf="' + t.id + '|date" value="' + fmt(t.date) + '" aria-label="Datum"></td><td data-label="Vem"><select class="inl" data-tf="' + t.id + '|who" aria-label="Vem">' + opts(['Daniel', 'Lasse'], t.who) + '</select></td>' +
+        '<td class="wide" data-label="Event"><select class="inl" data-tf="' + t.id + '|ev" aria-label="Event">' + S.events.map(function(e){ return '<option value="' + e.id + '"' + (e.id === t.ev ? ' selected' : '') + '>' + esc(e.name) + '</option>'; }).join('') + '<option value=""' + (t.ev ? '' : ' selected') + '>Internt</option></select></td>' +
+        '<td data-label="Aktivitet"><select class="inl" data-tf="' + t.id + '|akt" aria-label="Aktivitet">' + opts(AKT, t.akt) + '</select></td><td class="wide" data-label="Anteckning"><input class="inl" style="min-width:160px" data-tf="' + t.id + '|note" value="' + esc(t.note) + '" placeholder="Anteckning" aria-label="Anteckning"></td>' +
+        '<td data-label="Debiterbar"><input type="checkbox" class="cb" data-tdeb="' + t.id + '"' + (t.deb ? ' checked' : '') + ' aria-label="Debiterbar"></td>' +
+        '<td class="r" data-label="Timmar"><input type="number" inputmode="decimal" class="inl num" style="width:72px;text-align:right" min="0" max="24" step="0.25" data-th="' + t.id + '" value="' + t.h + '" aria-label="Timmar"></td>' +
         '<td class="r"><button class="btn quiet sm" data-act="tdel" data-id="' + t.id + '">Ta bort</button></td></tr>';
     }).join('');
   }).join('');
@@ -405,7 +423,7 @@ function vKorschema(ev){
     (L ? '' : '<button class="btn pri" data-act="livestart">Starta live-läge</button>') + '<button class="btn" data-act="print">Skriv ut</button></div>';
   var rows = cs.map(function(x){
     var cls = L ? (L.t >= x.end ? ' past' : L.t >= x.start ? ' cur' : '') : '';
-    return '<tr class="rowlink cue' + cls + (r.item === x.c.id ? ' sel' : '') + '" data-go="' + href(ev, 'korschema', x.c.id) + '"><td class="mono">' + mfmt(x.start) + '</td><td class="r">' + x.c.dur + ' min</td><td class="t">' + esc(x.c.title) + '</td><td><span class="tag">' + esc(x.c.typ) + '</span></td><td>' + esc(x.c.plats) + '</td><td>' + esc(x.c.owner) + '</td><td class="muted">' + esc(x.c.tech) + '</td><td>' + cc(x.c) + '</td></tr>';
+    return '<tr class="rowlink cue' + cls + (r.item === x.c.id ? ' sel' : '') + '" data-go="' + href(ev, 'korschema', x.c.id) + '"><td class="mono" data-label="Tid">' + mfmt(x.start) + '</td><td class="r" data-label="Längd">' + x.c.dur + ' min</td><td class="t">' + esc(x.c.title) + '</td><td data-label="Typ"><span class="tag">' + esc(x.c.typ) + '</span></td><td data-label="Plats">' + esc(x.c.plats) + '</td><td data-label="Ansvarig">' + esc(x.c.owner) + '</td><td class="muted wide" data-label="Teknik">' + esc(x.c.tech) + '</td><td>' + cc(x.c) + '</td></tr>';
   }).join('');
   return page('Körschema', 'Tiderna räknas ut från start och längd. Ändra en längd så flyttas allt efter.', addBtn('korschema'), kundBanner(ev) + live + tools +
     '<div class="tw"><table><thead><tr><th>Tid</th><th class="r">Längd</th><th>Punkt</th><th>Typ</th><th>Plats</th><th>Ansvarig</th><th>Teknik</th><th></th></tr></thead><tbody>' + rows + '</tbody></table>' +
@@ -417,12 +435,12 @@ function table(ev, mod, extra){
   return '<div class="tw"><table><thead><tr><th>' + (mod === 'personal' ? 'Pass' : 'Namn') + '</th>' + cols.map(function(f){ return '<th' + (f[2] === 'money' || f[2] === 'number' ? ' class="r"' : '') + '>' + f[1] + '</th>'; }).join('') + (extra ? '<th>' + extra[0] + '</th>' : '') + '<th></th></tr></thead><tbody>' +
     items.map(function(it){
       return '<tr class="rowlink' + (r.item === it.id ? ' sel' : '') + '" data-go="' + href(ev, mod, it.id) + '"><td class="t">' + esc(it.title) + '</td>' + cols.map(function(f){
-        return '<td' + (f[2] === 'money' || f[2] === 'number' ? ' class="r"' : '') + '>' + (f[2] === 'status' ? input(it, f) : show(it, f)) + '</td>';
-      }).join('') + (extra ? '<td>' + extra[1](it) + '</td>' : '') + '<td>' + cc(it) + '</td></tr>';
+        return '<td' + (f[2] === 'money' || f[2] === 'number' ? ' class="r"' : '') + ' data-label="' + f[1] + '">' + (f[2] === 'status' ? input(it, f) : show(it, f)) + '</td>';
+      }).join('') + (extra ? '<td data-label="' + extra[0] + '">' + extra[1](it) + '</td>' : '') + '<td>' + cc(it) + '</td></tr>';
     }).join('') + (mod === 'budget' ? sumRow(ev) : '') + '</tbody></table>' +
     (kund() ? '' : '<form class="addrow" data-add="' + mod + '"><input name="title" placeholder="Lägg till ' + M.one + ', tryck Enter" aria-label="Ny rad"></form>') + '</div>';
 }
-function sumRow(ev){ var b = 0, u = 0; ev.items.budget.forEach(function(r){ b += +r.budget; u += +r.utfall; }); return '<tr class="sum"><td>Summa</td><td class="r">' + kr(b) + '</td><td class="r">' + kr(u) + '</td><td></td><td></td><td></td></tr>'; }
+function sumRow(ev){ var b = 0, u = 0; ev.items.budget.forEach(function(r){ b += +r.budget; u += +r.utfall; }); return '<tr class="sum"><td>Summa</td><td class="r" data-label="Budget">' + kr(b) + '</td><td class="r" data-label="Utfall">' + kr(u) + '</td><td></td><td></td><td></td></tr>'; }
 function vPersonal(ev){
   var sh = ev.items.personal, bad = conflicts(ev), r = route(), ids = [];
   sh.forEach(function(s){ if (ids.indexOf(s.person) < 0) ids.push(s.person); });
@@ -557,7 +575,7 @@ function renderPanel(){
   var c = ctx(), el = $('#panel'), r = route();
   if (!c || !c.it || c.imod === 'ritningar' || (kund() && c.imod === '_event')){ document.body.classList.remove('has-panel'); el.hidden = true; el.innerHTML = ''; return; }
   var it = c.it, mod = c.imod, ev = c.ev, F = fieldsOf(mod), close = ev ? href(ev, r.mod) : '#/personal';
-  var h = '<header><span>' + (mod === '_person' ? 'Personalregister' : mod === '_event' ? 'Eventinställningar' : MODS[mod].name) + '</span><a class="btn quiet sm" href="' + close + '" aria-label="Stäng panelen">Stäng</a></header><div class="body">';
+  var h = '<header><span>' + (mod === '_person' ? 'Personalregister' : mod === '_event' ? 'Eventinställningar' : MODS[mod].name) + '</span><a class="btn quiet sm" href="' + close + '" aria-label="Stäng panelen"><span class="d">Stäng</span><span class="m">‹ Tillbaka</span></a></header><div class="body">';
   h += mod === 'lokal' || mod === 'personal' || kund() ? '<h2 style="font-size:17px;margin-bottom:12px">' + esc(it.title) + '</h2>' : '<input class="ttl" data-f="' + (mod === '_event' ? 'name' : 'title') + '" data-id="' + it.id + '" value="' + esc(mod === '_event' ? it.name : it.title) + '" aria-label="Namn">';
   if (mod === '_event') h += '<p class="faint" style="margin:-6px 0 12px">Byter du datum flyttas inte uppgifternas deadlines automatiskt.</p>';
   if (F.length) h += '<div class="fields">' + F.map(function(f){ return '<label>' + f[1] + '</label>' + (f[2] === 'status' ? '<div>' + input(it, f) + '</div>' : input(it, f, 'inl')); }).join('') + '</div>';
@@ -586,11 +604,13 @@ function render(keep){
   if (UI.live && !(ev && r.mod === 'korschema')) stopLive();
   document.body.classList.toggle('bare', r.view === 'dela');
   document.body.classList.remove('nav-open');
-  renderSide(); renderTop();
+  renderSide(); renderTop(); renderTabbar();
   var V = {uppgifter:vUppgifter, schema:vSchema, korschema:vKorschema, personal:vPersonal, lokal:vLokal, ritningar:vRitningar, moodboard:vMoodboard, gaster:vGaster, oversikt:vOversikt};
-  $('#main').innerHTML = r.view === 'event' ? (ev ? (V[r.mod] ? V[r.mod](ev) : vGeneric(ev, r.mod)) : viewHome()) : r.view === 'dela' ? viewShare() : r.view === 'inkorg' ? viewInbox() : r.view === 'personal' ? viewPeople() : r.view === 'mallar' ? viewTemplates() : r.view === 'tid' ? viewTime() : viewHome();
+  var html = r.view === 'event' ? (ev ? (V[r.mod] ? V[r.mod](ev) : vGeneric(ev, r.mod)) : viewHome()) : r.view === 'dela' ? viewShare() : r.view === 'inkorg' ? viewInbox() : r.view === 'personal' ? viewPeople() : r.view === 'mallar' ? viewTemplates() : r.view === 'tid' ? viewTime() : viewHome();
+  $('#main').innerHTML = (r.view === 'event' && ev ? modStrip(ev, r.mod) : '') + html;
   renderPanel();
   $('#main').scrollTop = keep ? y : 0;
+  var strip = document.querySelector('.modstrip'), cur = strip && strip.querySelector('a.on'); if (cur) strip.scrollLeft = cur.offsetLeft - strip.clientWidth / 2 + cur.offsetWidth / 2;
 }
 var lastPath = '';
 window.addEventListener('hashchange', function(){ var r = route(), path = r.view + '/' + (r.ev || '') + '/' + (r.mod || ''); UI.draft = ''; UI.pinMode = false; render(path === lastPath); lastPath = path;
@@ -654,7 +674,7 @@ function act(name, el, c){
     case 'pinmode': UI.pinMode = !UI.pinMode; render(true); break;
     case 'appr': setAppr(ev, el.dataset.target, el.dataset.val); break;
     case 'addnote': UI.focusNew = true; location.hash = href(ev, 'moodboard', addItem(ev, 'moodboard', 'Ny anteckning').id); break;
-    case 'addcolor': UI.focusNew = true; location.hash = href(ev, 'moodboard', addItem(ev, 'moodboard', 'Ny färg', {typ:'Färg', c1:'#4a45d6'}).id); break;
+    case 'addcolor': UI.focusNew = true; location.hash = href(ev, 'moodboard', addItem(ev, 'moodboard', 'Ny färg', {typ:'Färg', c1:'#E60571'}).id); break;
     case 'addcue': UI.focusNew = true; location.hash = href(ev, 'korschema', addItem(ev, 'korschema', 'Ny punkt').id); break;
     case 'addfirst': UI.focusNew = true; location.hash = href(ev, el.dataset.mod, addItem(ev, el.dataset.mod, NY[el.dataset.mod]).id); break;
     case 'lokalmall': ev.lokal.facts = [['Grund','Adress',ev.address],['Grund','Tillträde',''],['Grund','Sluttid',''],['Kapacitet','Sittande',''],['Kapacitet','Stående',''],['Kapacitet','Takhöjd',''],['Teknik och el','El',''],['Teknik och el','Nät',''],['Logistik','Lastkaj',''],['Logistik','Parkering',''],['Regler','Ljudgräns',''],['Kontakt','Platsansvarig','']]; save(); render(true); break;
