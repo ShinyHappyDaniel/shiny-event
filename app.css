@@ -383,3 +383,26 @@ a.evtag:hover{background:var(--accent-bg);color:var(--accent-ink)}
 .bulk{display:flex;align-items:center;gap:8px;flex-wrap:wrap;background:var(--accent-bg);border:1px solid var(--accent);border-radius:var(--r);padding:6px 10px;margin-bottom:8px;position:sticky;top:0;z-index:2}
 th.ck,td.ck{width:36px;padding-right:0}
 @media (max-width:700px){.tw tr{position:relative}.tw td.ck{position:absolute;top:10px;right:10px;width:auto}.tw td.t{padding-right:40px}.bulk{top:-14px}}
+
+.cal{position:fixed;z-index:70;width:280px;background:var(--bg);border:1px solid var(--line2);border-radius:10px;padding:10px;box-shadow:0 8px 24px rgba(0,0,0,.14)}
+.calhd{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px}
+.calhd b{text-transform:capitalize;font-weight:600}
+.cal button{border:0;background:none;border-radius:6px;min-height:34px;color:var(--text)}
+.cal button:hover{background:var(--bg3)}
+.calhd button{width:34px;font-size:18px}
+.calgrid{display:grid;grid-template-columns:repeat(7,1fr);gap:2px}
+.calgrid span{font-size:11px;color:var(--faint);text-align:center;padding:4px 0}
+.calgrid button{font-variant-numeric:tabular-nums}
+.calgrid .today{box-shadow:inset 0 0 0 1px var(--line2);font-weight:600}
+.calgrid .on,.calgrid .on:hover{background:var(--accent);color:var(--on-accent)}
+.calft{display:flex;justify-content:space-between;margin-top:6px;border-top:1px solid var(--line);padding-top:6px}
+.calft button{padding:0 10px;color:var(--accent-ink)}
+.cm .hd .btn{margin-left:auto;height:22px;min-height:0;opacity:.7}
+.cm .hd .btn:hover{opacity:1}
+.newp{margin:-6px 0 14px}.newp label{display:block;font-size:12px;margin-bottom:4px}
+.newp .addrow{border:1px solid var(--line2);border-radius:var(--r);padding:3px 3px 3px 6px}
+@media (max-width:700px){
+  .cal{width:100%;border-radius:14px 14px 0 0;border-width:1px 0 0;padding:14px 14px calc(14px + env(safe-area-inset-bottom));box-shadow:0 -8px 24px rgba(0,0,0,.18)}
+  .cal button{min-height:44px;font-size:16px}
+  .cm .hd .btn{min-height:32px;height:32px}
+}

@@ -36,12 +36,49 @@ function bulkBar(ids, mode){
     (mode === 'folk' ? '<button class="btn sm" data-act="bulkarkiv" data-v="1">Arkivera</button>' : mode === 'arkiv' ? '<button class="btn sm" data-act="bulkarkiv" data-v="0">Återställ</button>' : '') +
     '<button class="btn sm" data-act="bulkdel">Ta bort</button><div class="sp"></div><button class="btn quiet sm" data-act="bulkclear">Avmarkera</button></div>';
 }
+// 1630, 16.30, 16:30 eller 9 ger 16:30 respektive 09:00. Ogiltig tid ger null.
+function parseTime(v){
+  var m = String(v || '').trim().match(/^(\d{1,2})(?:[:. ]?(\d{2}))?$/); if (!m) return null;
+  var h = +m[1], mi = +(m[2] || 0); return h < 24 && mi < 60 ? String(h).padStart(2, '0') + ':' + String(mi).padStart(2, '0') : null;
+}
+var CAL = null;
+function openCal(inp){
+  var cur = parseDate(inp.value), d = fromIso(cur || iso(T0));
+  CAL = {inp:inp, y:d.getFullYear(), m:d.getMonth(), sel:cur, t:performance.now()};
+  (inp.closest('dialog') || document.body).appendChild($('#cal'));
+  drawCal();
+}
+function closeCal(){ if (!CAL) return; CAL = null; var el = $('#cal'); el.hidden = true; document.body.appendChild(el); }
+function drawCal(){
+  var c = CAL, el = $('#cal'), first = new Date(c.y, c.m, 1), off = (first.getDay() + 6) % 7, days = new Date(c.y, c.m + 1, 0).getDate(), today = iso(T0), i;
+  var h = '<div class="calhd"><button type="button" data-cal="-1" aria-label="Föregående månad">&lsaquo;</button><b>' + first.toLocaleDateString('sv-SE', {month:'long', year:'numeric'}) + '</b><button type="button" data-cal="1" aria-label="Nästa månad">&rsaquo;</button></div><div class="calgrid">' +
+    ['Må', 'Ti', 'On', 'To', 'Fr', 'Lö', 'Sö'].map(function(x){ return '<span>' + x + '</span>'; }).join('');
+  for (i = 0; i < off; i++) h += '<i></i>';
+  for (i = 1; i <= days; i++){ var ds = iso(new Date(c.y, c.m, i)); h += '<button type="button" data-calday="' + ds + '" class="' + (ds === c.sel ? 'on' : '') + (ds === today ? ' today' : '') + '"' + (ds === c.sel ? ' aria-pressed="true"' : '') + ' aria-label="' + fmtLong(ds) + '">' + i + '</button>'; }
+  el.innerHTML = h + '</div><div class="calft"><button type="button" data-calday="' + today + '">I dag</button><button type="button" data-cal="x">Stäng</button></div>';
+  el.hidden = false;
+  if (window.innerWidth > 700){
+    var r = c.inp.getBoundingClientRect(), top = r.bottom + 4, hgt = el.offsetHeight || 320;
+    if (top + hgt > window.innerHeight - 8) top = Math.max(8, r.top - hgt - 4);
+    el.style.left = Math.max(8, Math.min(r.left, window.innerWidth - 288)) + 'px'; el.style.top = top + 'px'; el.style.bottom = 'auto';
+  } else { el.style.left = '0'; el.style.top = 'auto'; el.style.bottom = '0'; }
+}
+function calClick(t){
+  var b = t.closest('[data-cal],[data-calday]'); if (!b) return;
+  if (b.dataset.calday){ var inp = CAL.inp; inp.value = fmt(b.dataset.calday); closeCal(); inp.dispatchEvent(new Event('change', {bubbles:true})); return; }
+  if (b.dataset.cal === 'x'){ closeCal(); return; }
+  var d = new Date(CAL.y, CAL.m + (+b.dataset.cal), 1); CAL.y = d.getFullYear(); CAL.m = d.getMonth(); drawCal();
+}
+// Klick i kalendern får inte flytta fokus från datumfältet, annars ritas sidan om under den.
+['mousedown', 'pointerdown'].forEach(function(n){ document.addEventListener(n, function(e){ UI.downAt = performance.now(); if (e.target.closest && e.target.closest('#cal')) e.preventDefault(); }, true); });
+document.addEventListener('focusin', function(e){ if (e.target.classList && e.target.classList.contains('datefld') && !kund()) openCal(e.target); else if (CAL && !(e.target.closest && e.target.closest('#cal'))) closeCal(); });
+window.addEventListener('resize', closeCal);
 function addBtn(mod){ return kund() ? '' : '<button class="btn pri" data-act="addfirst" data-mod="' + mod + '">Lägg till ' + MODS[mod].one + '</button>'; }
 var PERSON_FIELDS = [['role','Roll','text'],['tel','Telefon','text'],['mejl','Mejl','text'],['ort','Ort','text'],['cert','Certifikat','text'],['arvode','Arvode per pass','money'],['avtal','Avtal, fil','text'],['avtalslut','Avtal löper ut','date']];
 var GROUPS = [['', ['oversikt']], ['Planering', ['uppgifter','schema','korschema']], ['Folk', ['personal','leverantorer','underhallning']], ['Plats', ['lokal','ritningar','teknik','fortaring']], ['Kreativt', ['moodboard']], ['Affär', ['budget','avtal','gaster']]];
 var KUND_MODS = ['oversikt','uppgifter','korschema','ritningar','moodboard','gaster'];
 
-var S, UI = {taskView:'lista', taskFilter:'alla', hideDone:false, shut:{}, who:'Alla', drawing:null, pinMode:false, vis:'intern', draft:'', live:null, pal:null, undo:null, week:0, tw:'Daniel', tplOpen:{}, focusNew:false, pf:{q:'', ev:'', role:'', arkiv:false}, sel:{}};
+var S, UI = {taskView:'lista', taskFilter:'alla', hideDone:false, shut:{}, who:'Alla', drawing:null, pinMode:false, vis:'intern', draft:'', live:null, pal:null, undo:null, week:0, tw:'Daniel', tplOpen:{}, focusNew:false, downAt:0, pf:{q:'', ev:'', role:'', arkiv:false}, sel:{}};
 function load(){ try { S = JSON.parse(localStorage.getItem(KEY)); } catch(e){} if (!S || S.v !== 1) S = seed(); if (!S.time) S.time = seedTime(); if (!S.templates) S.templates = JSON.parse(TEMPLATES0); TEMPLATES = S.templates; }
 function persist(){
   if (REMOTE){ try { localStorage.setItem('se-prefs', JSON.stringify({role:S.role, theme:S.theme})); } catch(e){} queueSync(); return; }
@@ -134,8 +171,8 @@ function input(it, f, cls){
     case 'status': return '<select class="st t-' + (TONE[v] || 'n') + '"' + a + '>' + opts(f[3], v) + '</select>';
     case 'select': return '<select class="' + cls + '"' + a + '>' + opts(f[3], v) + '</select>';
     case 'person': return '<select class="' + cls + '"' + a + '>' + (person(v) ? '' : '<option value="">Ej tillsatt</option>') + S.people.filter(function(p){ return !p.arkiv || p.id === v; }).map(function(p){ return '<option value="' + p.id + '"' + (p.id === v ? ' selected' : '') + '>' + esc(p.title) + '</option>'; }).join('') + '</select>';
-    case 'date': return '<input type="text" inputmode="numeric" placeholder="ÅÅ.MM.DD" maxlength="10" class="' + cls + '"' + a + ' value="' + fmt(v) + '">';
-    case 'time': return '<input type="time" class="' + cls + '"' + a + ' value="' + esc(v) + '">';
+    case 'date': return '<input type="text" inputmode="numeric" placeholder="ÅÅ.MM.DD" maxlength="10" autocomplete="off" class="' + cls + ' datefld"' + a + ' value="' + fmt(v) + '">';
+    case 'time': return '<input type="text" inputmode="numeric" placeholder="TT:MM" maxlength="5" class="' + cls + ' num"' + a + ' value="' + esc(v) + '">';
     case 'number': case 'money': return '<input type="number" class="' + cls + '"' + a + ' value="' + esc(v) + '">';
     case 'lines': return '<textarea class="' + cls + '" rows="4"' + a + '>' + esc((v || []).join('\n')) + '</textarea>';
     case 'kv': return '<textarea class="' + cls + '" rows="5"' + a + '>' + esc(Object.keys(v || {}).map(function(x){ return x + ': ' + v[x]; }).join('\n')) + '</textarea>';
@@ -329,7 +366,7 @@ function viewTime(){
     '<button class="btn" data-act="week" data-d="-1">Föregående</button><span class="num" style="min-width:150px;text-align:center"><b>Vecka ' + weekNo(ws) + '</b>, ' + fmt(days[0]) + ' till ' + fmt(days[6]) + '</span><button class="btn" data-act="week" data-d="1">Nästa</button>' +
     (UI.week ? '<button class="btn quiet" data-act="week" data-d="0">Denna vecka</button>' : '') + '</div>';
   var defDate = days.indexOf(iso(T0)) >= 0 ? iso(T0) : days[0], defWho = UI.tw === 'Båda' ? 'Daniel' : UI.tw;
-  var form = '<form id="timeform" class="tform"><input class="fi num" type="text" inputmode="numeric" placeholder="ÅÅ.MM.DD" maxlength="10" style="width:96px" name="date" value="' + fmt(defDate) + '" aria-label="Datum" required>' +
+  var form = '<form id="timeform" class="tform"><input class="fi num datefld" autocomplete="off" type="text" inputmode="numeric" placeholder="ÅÅ.MM.DD" maxlength="10" style="width:96px" name="date" value="' + fmt(defDate) + '" aria-label="Datum" required>' +
     '<select class="fi" name="who" aria-label="Vem">' + opts(['Daniel', 'Lasse'], defWho) + '</select>' +
     '<select class="fi" name="ev" aria-label="Event">' + S.events.map(function(e){ return '<option value="' + e.id + '">' + esc(e.name) + '</option>'; }).join('') + '<option value="">Internt, ej debiterbart</option></select>' +
     '<select class="fi" name="akt" aria-label="Aktivitet">' + opts(AKT, AKT[0]) + '</select>' +
@@ -338,7 +375,7 @@ function viewTime(){
   var rows = days.map(function(ds){
     var dl = list.filter(function(t){ return t.date === ds; }); if (!dl.length) return '';
     return '<tr class="sum"><td colspan="6">' + fmtLong(ds) + '</td><td class="r">' + hh(sum(dl)) + ' h</td><td></td></tr>' + dl.map(function(t){
-      return '<tr><td data-label="Datum"><input type="text" inputmode="numeric" placeholder="ÅÅ.MM.DD" maxlength="10" class="inl num" style="width:86px" data-tf="' + t.id + '|date" value="' + fmt(t.date) + '" aria-label="Datum"></td><td data-label="Vem"><select class="inl" data-tf="' + t.id + '|who" aria-label="Vem">' + opts(['Daniel', 'Lasse'], t.who) + '</select></td>' +
+      return '<tr><td data-label="Datum"><input type="text" inputmode="numeric" placeholder="ÅÅ.MM.DD" maxlength="10" autocomplete="off" class="inl num datefld" style="width:86px" data-tf="' + t.id + '|date" value="' + fmt(t.date) + '" aria-label="Datum"></td><td data-label="Vem"><select class="inl" data-tf="' + t.id + '|who" aria-label="Vem">' + opts(['Daniel', 'Lasse'], t.who) + '</select></td>' +
         '<td class="wide" data-label="Event"><select class="inl" data-tf="' + t.id + '|ev" aria-label="Event">' + S.events.map(function(e){ return '<option value="' + e.id + '"' + (e.id === t.ev ? ' selected' : '') + '>' + esc(e.name) + '</option>'; }).join('') + '<option value=""' + (t.ev ? '' : ' selected') + '>Internt</option></select></td>' +
         '<td data-label="Aktivitet"><select class="inl" data-tf="' + t.id + '|akt" aria-label="Aktivitet">' + opts(AKT, t.akt) + '</select></td><td class="wide" data-label="Anteckning"><input class="inl" style="min-width:160px" data-tf="' + t.id + '|note" value="' + esc(t.note) + '" placeholder="Anteckning" aria-label="Anteckning"></td>' +
         '<td data-label="Debiterbar"><input type="checkbox" class="cb" data-tdeb="' + t.id + '"' + (t.deb ? ' checked' : '') + ' aria-label="Debiterbar"></td>' +
@@ -467,7 +504,7 @@ function vKorschema(ev){
       '<div class="tools" style="margin:0"><button class="btn" data-act="livepause">' + (L.paused ? 'Fortsätt' : 'Paus') + '</button><button class="btn" data-act="livenext">Nästa punkt</button><button class="btn" data-act="livestop">Avsluta</button></div></div>' +
       '<div class="banner"><span>Demo: en sekund är en minut. I riktiga appen går klockan i realtid och alla med länken ser samma läge.</span></div>';
   }
-  var tools = '<div class="tools"><label class="muted" for="runstart">Start</label><input type="time" id="runstart" class="btn" value="' + ev.runStart + '"' + (kund() ? ' disabled' : '') + '><span class="faint">Slutar ' + mfmt(cs[cs.length - 1].end) + ', ' + cs.length + ' punkter</span><div class="sp"></div>' +
+  var tools = '<div class="tools"><label class="muted" for="runstart">Start</label><input type="text" inputmode="numeric" placeholder="TT:MM" maxlength="5" id="runstart" class="btn num" style="width:76px" value="' + ev.runStart + '"' + (kund() ? ' disabled' : '') + '><span class="faint">Slutar ' + mfmt(cs[cs.length - 1].end) + ', ' + cs.length + ' punkter</span><div class="sp"></div>' +
     (L ? '' : '<button class="btn pri" data-act="livestart">Starta live-läge</button>') + '<button class="btn" data-act="print">Skriv ut</button></div>';
   var rows = cs.map(function(x){
     var cls = L ? (L.t >= x.end ? ' past' : L.t >= x.start ? ' cur' : '') : '';
@@ -506,7 +543,7 @@ function vPersonal(ev){
         }).join('') + '</div></div>';
       }).join('') + '</div></div>';
   }
-  return page('Personal', 'Du och Lasse bokar. Varje person får en egen länk med kalltid och schema, utan inloggning.', addBtn('personal'), h + table(ev, 'personal', ['Koll', function(s){ return bad[s.id] ? st('Krock') : ''; }]));
+  return page('Personal', 'Du och Lasse bokar. Varje person får en egen länk med kalltid och schema, utan inloggning. Nya personer läggs upp i Personalregistret, eller direkt i ett pass.', (kund() ? '' : '<a class="btn" href="#/personal">Personalregister</a>') + addBtn('personal'), h + table(ev, 'personal', ['Koll', function(s){ return bad[s.id] ? st('Krock') : ''; }]));
 }
 function vGeneric(ev, mod){
   var top = '', sub = {leverantorer:'Allt per leverantör: kontakt, status, belopp och nästa frist.', underhallning:'Artister och talare: status, tider, rider och loge.', teknik:'Utrustningslista med leverantör, strömbehov och status.', fortaring:'Serveringar med tider och antal. Specialkost hämtas från gästlistan.', budget:'Budget mot utfall, post för post.', avtal:'Avtal och kontrakt som PDF, med bevakning av slutdatum.'}[mod];
@@ -528,8 +565,9 @@ function vGeneric(ev, mod){
 function commentsBlock(it){
   var cs = comments(it), h = '<div class="sect"><span>Kommentarer</span><span>' + cs.length + '</span></div>';
   h += cs.map(function(c){
+    var ci = it.comments.indexOf(c);
     var txt = esc(c.text).replace(/@([A-Za-zÅÄÖåäö]+(?: [A-ZÅÄÖ][a-zåäö]+)?)/g, '<span class="at">@$1</span>');
-    return '<div class="cm"><div class="hd"><b>' + esc(c.who) + '</b><span>' + ago(c.at) + '</span>' + (kund() ? '' : '<span class="vis ' + c.vis + '">' + (c.vis === 'kund' ? 'Synlig för kund' : 'Intern') + '</span>') + '</div><p>' + txt + '</p></div>';
+    return '<div class="cm"><div class="hd"><b>' + esc(c.who) + '</b><span>' + ago(c.at) + '</span>' + (kund() ? '' : '<span class="vis ' + c.vis + '">' + (c.vis === 'kund' ? 'Synlig för kund' : 'Intern') + '</span>') + (!kund() || c.who === 'Kund' ? '<button class="btn quiet sm" data-act="cmdel" data-i="' + ci + '" aria-label="Ta bort kommentaren från ' + esc(c.who) + '">Ta bort</button>' : '') + '</div><p>' + txt + '</p></div>';
   }).join('') || '<p class="faint" style="margin:0 0 8px">Inga kommentarer än.</p>';
   h += '<form class="composer" data-comment="' + it.id + '"><textarea name="text" placeholder="Skriv en kommentar. Nämn någon med @" aria-label="Ny kommentar" data-draft>' + esc(UI.draft) + '</textarea><div class="bar2">' +
     (kund() ? '<span class="faint">Byrån ser din kommentar</span>' : '<div class="seg" role="group" aria-label="Synlighet"><button type="button" data-vis="intern" class="' + (UI.vis === 'intern' ? 'on' : '') + '">Intern</button><button type="button" data-vis="kund" class="' + (UI.vis === 'kund' ? 'on' : '') + '">Synlig för kund</button></div>') +
@@ -629,6 +667,10 @@ function renderPanel(){
   if (mod === '_event') h += '<p class="faint" style="margin:-6px 0 12px">Byter du datum flyttas inte uppgifternas deadlines automatiskt.</p>';
   if (F.length) h += '<div class="fields">' + F.map(function(f){ return '<label>' + f[1] + '</label>' + (f[2] === 'status' ? '<div>' + input(it, f) + '</div>' : input(it, f, 'inl')); }).join('') + '</div>';
   if (mod === 'korschema' && !kund()){ var x = cueTimes(ev).filter(function(q){ return q.c === it; })[0]; h += '<div class="tools"><span class="mono">' + mfmt(x.start) + ' till ' + mfmt(x.end) + '</span><div class="sp"></div><button class="btn sm" data-act="cueup">Flytta upp</button><button class="btn sm" data-act="cuedown">Flytta ned</button></div>'; }
+  if (mod === 'personal' && !kund()){
+    var tomt = !S.people.some(function(p){ return !p.arkiv; });
+    h += '<form class="newp" data-newperson="' + it.id + '"><label for="npn" class="faint">' + (tomt ? 'Personalregistret är tomt. Skriv namnet på personen, så läggs den upp och sätts på passet.' : 'Saknas personen i listan? Skriv namnet, så läggs den upp i registret.') + '</label><div class="addrow"><input id="npn" name="name" placeholder="Namn på ny person" autocomplete="off"><button class="btn sm">Lägg till person</button></div></form>';
+  }
   if (mod === 'personal'){ var bad = conflicts(ev); h += (bad[it.id] ? '<div class="banner warn"><span>Krockar med ett annat pass för samma person.</span></div>' : '') + '<div class="tools"><a class="btn sm" href="#/dela/' + ev.id + '/' + it.person + '">Förhandsvisa personens länk</a><button class="btn sm" data-act="send">Skicka kalltid</button></div>'; }
   if (mod === 'avtal') h += '<div class="tools"><button class="btn sm" data-act="upload">Byt PDF</button>' + (watch(it) ? st(watch(it)[1], watch(it)[0]) : '') + '</div>';
   if (mod === 'moodboard' && it.typ === 'Bild') h += '<div class="mc" style="cursor:default">' + art(it) + '</div>';
@@ -646,6 +688,7 @@ function renderPanel(){
 
 /* ---------- Render ---------- */
 function render(keep){
+  if (CAL && !document.body.contains(CAL.inp)) closeCal();
   var r = route(), y = $('#main').scrollTop, ev = r.view === 'event' && getEv(r.ev);
   document.documentElement.dataset.theme = S.theme || (window.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
   if (ev){ S.kundEv = ev.id; if (kund() && KUND_MODS.indexOf(r.mod) < 0) r.mod = 'oversikt'; if (!MODS[r.mod]) r.mod = 'oversikt'; }
@@ -684,6 +727,9 @@ function addItem(ev, mod, title, extra){
 /* ---------- Händelser ---------- */
 document.addEventListener('click', function(e){
   var t = e.target, c = ctx() || {}, ev = c.ev, a;
+  // På mobil lägger sig kalendern över fältet man just tryckte på. Trycket som öppnade den får varken välja datum eller stänga den.
+  if (CAL){ if (UI.downAt <= CAL.t) return; if (t.closest('#cal')){ calClick(t); return; } if (t === CAL.inp) return; closeCal(); }
+  else if (t.classList && t.classList.contains('datefld') && !kund()){ openCal(t); return; }
   if (t.closest('.pal') && !t.closest('.palbox')){ closePal(); return; }
   if ((a = t.closest('[data-pal]'))){ runPal(+a.dataset.pal); return; }
   if (t.id === 'canvas' || (t.closest('#canvas') && !t.closest('.pin'))){
@@ -747,6 +793,7 @@ function act(name, el, c){
     case 'tdel': var te = S.time.filter(function(x){ return x.id === el.dataset.id; })[0], ti = S.time.indexOf(te); S.time.splice(ti, 1); save(); render(true); toast(hh(te.h) + ' h borttagna.', function(){ S.time.splice(ti, 0, te); save(); render(true); }); break;
     case 'pfclear': UI.pf = {q:'', ev:'', role:'', arkiv:UI.pf.arkiv}; render(true); break;
     case 'pfarkiv': UI.pf.arkiv = !UI.pf.arkiv; UI.sel = {}; render(true); break;
+    case 'cmdel': it.comments.splice(+el.dataset.i, 1); save(); render(true); toast('Kommentaren borttagen.', true); break;
     case 'bulkclear': UI.sel = {}; render(true); break;
     case 'bulkarkiv': var aids = Object.keys(UI.sel).filter(function(k){ return UI.sel[k]; }), av = el.dataset.v === '1'; S.people.forEach(function(p){ if (aids.indexOf(p.id) >= 0){ if (av) p.arkiv = true; else delete p.arkiv; } }); UI.sel = {}; save(); render(true); toast(aids.length + (av ? ' arkiverade.' : ' återställda.'), true); break;
     case 'bulkdel':
@@ -780,6 +827,7 @@ document.addEventListener('change', function(e){
     var it = found.it, k = t.dataset.f, f = fieldsOf(found.mod).filter(function(x){ return x[0] === k; })[0];
     var nv = t.type === 'number' ? +t.value : t.value;
     if (f && f[2] === 'date'){ nv = t.value.trim() ? parseDate(t.value) : ''; if (nv === null){ toast('Skriv datumet som ÅÅ.MM.DD, till exempel ' + fmt(iso(T0)) + '.'); render(true); return; } }
+    if (f && f[2] === 'time'){ nv = t.value.trim() ? parseTime(t.value) : ''; if (nv === null){ toast('Skriv tiden som TT:MM i 24-timmarsformat, till exempel 16:30.'); render(true); return; } }
     if (f && f[2] === 'lines') nv = t.value.split('\n').map(function(x){ return x.trim(); }).filter(Boolean);
     if (f && f[2] === 'kv'){ nv = {}; t.value.split('\n').forEach(function(x){ var p = x.split(':'); if (p[0].trim()) nv[p[0].trim()] = +(p[1] || 0) || 0; }); }
     setVal(it, k, nv);
@@ -800,7 +848,7 @@ document.addEventListener('change', function(e){
   if (t.id === 'pfrole'){ UI.pf.role = t.value; render(true); return; }
   if (t.id === 'hidedone'){ UI.hideDone = t.checked; render(true); return; }
   if (t.id === 'who'){ UI.who = t.value; render(true); return; }
-  if (t.id === 'runstart'){ ev.runStart = t.value || '16:30'; save(); render(true); return; }
+  if (t.id === 'runstart'){ var rs = parseTime(t.value); if (!rs){ toast('Skriv tiden som TT:MM, till exempel 16:30.'); render(true); return; } ev.runStart = rs; save(); render(true); return; }
 });
 document.addEventListener('toggle', function(e){ if (e.target.dataset && e.target.dataset.tplk) UI.tplOpen[e.target.dataset.tplk] = e.target.open; }, true);
 document.addEventListener('input', function(e){
@@ -823,6 +871,10 @@ document.addEventListener('submit', function(e){
   } else if (f.dataset.addtpl){
     var tt = f.title.value.trim(); if (!tt) return;
     TEMPLATES[f.dataset.addtpl].tasks.push([0, tt, 30, 'D']); save(); render(true);
+  } else if (f.dataset.newperson){
+    var pn = f.name.value.trim(); if (!pn) return;
+    var sh = findItem(ev, f.dataset.newperson).it, ny = {id:uid('p'), title:pn, role:sh.role === 'Ny roll' ? '' : sh.role, tel:'', mejl:'', ort:'', cert:'', arvode:+sh.arvode || 0, avtal:'', avtalslut:'', comments:[], log:[], _p:nextPos(S.people)};
+    S.people.push(ny); sh.person = ny.id; sh.title = pn + ', ' + sh.role; logIt(sh, 'Person: ' + pn); save(); render(true); toast(pn + ' upplagd i personalregistret.', true);
   } else if (f.dataset.comment){
     var text = f.text.value.trim(); if (!text) return;
     (c.it.comments = c.it.comments || []).push({who:me(), text:text, at:Date.now(), vis:kund() ? 'kund' : UI.vis}); UI.draft = ''; save(); render(true);
@@ -847,6 +899,8 @@ document.addEventListener('keydown', function(e){
     e.preventDefault(); if (key === 'y' || e.shiftKey) redoApp(); else undoApp(); return;
   }
   if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k'){ e.preventDefault(); UI.pal ? closePal() : openPal(); return; }
+  if (CAL && e.key === 'Escape'){ closeCal(); return; }
+  if (CAL && (e.key === 'Enter' || e.key === 'Tab')) closeCal();
   if (UI.pal){
     var n = palList().length;
     if (e.key === 'ArrowDown'){ e.preventDefault(); UI.pal.i = (UI.pal.i + 1) % n; drawPal(); }
@@ -884,7 +938,7 @@ function runPal(i){
 }
 function newDialog(){
   $('#dlg').innerHTML = '<form id="newform"><h2>Nytt event</h2><label><span>Namn</span><input name="name" required placeholder="Sommarfest 2027"></label><label><span>Kund</span><input name="client" required></label>' +
-    '<div class="two"><label><span>Datum</span><input name="date" type="text" inputmode="numeric" placeholder="ÅÅ.MM.DD" maxlength="10" required value="' + fmt(iso(addDays(T0, 60))) + '"></label><label><span>Antal gäster</span><input name="guests" type="number" min="1" value="200" required></label></div>' +
+    '<div class="two"><label><span>Datum</span><input name="date" class="datefld" autocomplete="off" type="text" inputmode="numeric" placeholder="ÅÅ.MM.DD" maxlength="10" required value="' + fmt(iso(addDays(T0, 60))) + '"></label><label><span>Antal gäster</span><input name="guests" type="number" min="1" value="200" required></label></div>' +
     '<label><span>Lokal</span><input name="venue" placeholder="Kan fyllas i senare"></label><label><span>Mall</span><select name="tpl">' + Object.keys(TEMPLATES).map(function(k){ return '<option value="' + k + '">' + TEMPLATES[k].name + ', ' + TEMPLATES[k].tasks.length + ' uppgifter</option>'; }).join('') + '</select></label>' +
     '<div class="act"><button type="button" class="btn" data-act="close">Avbryt</button><button class="btn pri">Skapa event</button></div></form>';
   $('#dlg').showModal();
@@ -892,7 +946,7 @@ function newDialog(){
 
 /* ---------- Start ---------- */
 function typing(){ var a = document.activeElement; return !!(a && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName) && a.type !== 'checkbox' && a.closest('#main,#panel,#dlg')); }
-function remoteRender(){ if (typing() || UI.pal){ UI.pendingRender = true; return; } UI.pendingRender = false; render(true); }
+function remoteRender(){ if (typing() || UI.pal || CAL){ UI.pendingRender = true; return; } UI.pendingRender = false; render(true); }
 document.addEventListener('focusout', function(){ if (UI.pendingRender) setTimeout(function(){ if (UI.pendingRender && !typing()) remoteRender(); }, 60); });
 window.addEventListener('beforeunload', function(e){ if (REMOTE && SYNC.pending){ flushSync(); e.preventDefault(); e.returnValue = ''; } });
 function start(){ histMark(); HIST.undo = []; HIST.redo = []; var r = route(); lastPath = r.view + '/' + (r.ev || '') + '/' + (r.mod || ''); render(false); }
